@@ -85,15 +85,33 @@
                 </StackPanel>
                 <StackPanel x:Name="TrafficPage" Visibility="Collapsed">
                     <TextBlock Text="Control de tráfico" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Text="Administración del ancho de banda" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="22">
-                        <StackPanel>
-                            <TextBlock Text="Límites por dispositivo" FontSize="18" FontWeight="SemiBold"/>
-                            <TextBlock Text="Esta versión aún no aplica límites reales de subida y bajada. Windows Mobile Hotspot no ofrece un control por cliente desde esta interfaz; para que los valores tengan efecto hace falta integrar un motor de filtrado y shaping de tráfico." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,8,0,18"/>
-                            <TextBlock Text="Estado" Foreground="{StaticResource MutedBrush}"/>
-                            <TextBlock Text="No configurado: límites no aplicados" FontWeight="SemiBold" Margin="0,4,0,0"/>
-                        </StackPanel>
+                    <TextBlock Text="Límites independientes de descarga y subida por dispositivo" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,18"/>
+                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,14">
+                        <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                            <StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Reglas identificadas por MAC y actualizadas con la IP detectada." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel>
+                            <Button Grid.Column="1" Content="Actualizar lista" Click="ScanDevicesButton_Click" VerticalAlignment="Center"/>
+                        </Grid>
                     </Border>
+                    <ItemsControl x:Name="TrafficLimitsList">
+                        <ItemsControl.ItemTemplate><DataTemplate>
+                            <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,12">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <Border Background="{StaticResource BackgroundBrush}" CornerRadius="10" Width="42" Height="42" VerticalAlignment="Center"><TextBlock Text="{Binding DeviceIcon}" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                                        <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Ip}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,2,0,0"/><TextBlock Text="{Binding Mac}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+                                        <Border Grid.Column="2" Background="{Binding StateBrush}" CornerRadius="8" Padding="9,5" VerticalAlignment="Center"><TextBlock Text="{Binding State}" FontSize="11" FontWeight="SemiBold"/></Border>
+                                    </Grid>
+                                    <Separator Margin="0,0,0,12"/>
+                                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="↓  Límite de descarga" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding DownloadMbps, StringFormat={}{0} Mbps}" Foreground="{StaticResource AccentBrush}" FontSize="16" FontWeight="Bold"/></Grid>
+                                    <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding DownloadMbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
+                                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="↑  Límite de subida" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding UploadMbps, StringFormat={}{0} Mbps}" Foreground="{StaticResource AccentBrush}" FontSize="16" FontWeight="Bold"/></Grid>
+                                    <Slider Minimum="1" Maximum="50" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding UploadMbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,14"/>
+                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding TrafficText}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" FontSize="12"/><Button Grid.Column="1" Content="Guardar límites" Tag="{Binding}" Click="ApplyDeviceLimit_Click"/></Grid>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate></ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Border Background="{StaticResource PanelBrush}" CornerRadius="14" Padding="16" Margin="0,0,0,12"><StackPanel><TextBlock Text="Estado del motor de limitación" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="TrafficEngineStatusText" Text="Motor de shaping por cliente pendiente de integración." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></Border>
                 </StackPanel>
                 <StackPanel x:Name="SettingsPage" Visibility="Collapsed">
                     <TextBlock Text="Configuración" FontSize="28" FontWeight="Bold"/>
