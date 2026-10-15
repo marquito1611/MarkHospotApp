@@ -118,7 +118,7 @@ public partial class MainWindow
                 long downloaded = 0;
                 var stopwatch = Stopwatch.StartNew();
                 var lastReport = TimeSpan.Zero;
-                var progress = new Progress<DownloadProgress>(UpdateDownloadProgress);
+                IProgress<DownloadProgress> progress = new Progress<DownloadProgress>(UpdateDownloadProgress);
                 while (true)
                 {
                     var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length));
