@@ -316,7 +316,7 @@ public partial class MainWindow : Window
             foreach (var row in ordered) _devices.Add(row);
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
-            SetStatus($"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Los nombres dependen de lo que cada equipo anuncie a la red; algunos solo permiten mostrar un nombre genérico.");
+            SetStatus(_captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Para medir tráfico instala Npcap (modo compatible con WinPcap) y vuelve a buscar dispositivos.");
         }
         catch (Exception ex) { SetStatus("Error al buscar clientes del hotspot: " + ex.Message); }
         finally { ScanDevicesButton.IsEnabled = true; }
