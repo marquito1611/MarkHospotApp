@@ -144,8 +144,10 @@ public partial class MainWindow : Window
 
     private static void SetBrushColor(string key, string hex)
     {
-        if (Application.Current.Resources[key] is System.Windows.Media.SolidColorBrush brush)
-            brush.Color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+        // Resource brushes declared in XAML may be frozen (read-only).
+        // Replace the resource with a fresh brush instead of mutating its Color.
+        var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+        Application.Current.Resources[key] = new System.Windows.Media.SolidColorBrush(color);
     }
 
     private void DevicesNav_Click(object sender, RoutedEventArgs e) => ShowPage(DevicesPage);
