@@ -1,0 +1,46 @@
+name: Publish latest Windows build to Releases
+
+on:
+  push:
+    paths:
+      - '.github/workflows/publish-latest-release.yml'
+    branches:
+      - main
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download latest successful Windows build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: MarkHotspot-win-x64
+          path: ./artifact
+          run-id: 38706524684
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Find executable
+        id: exe
+        shell: bash
+        run: |
+          exe=$(find ./artifact -type f -iname '*.exe' -print -quit)
+          if [ -z "$exe" ]; then
+            echo 'No .exe found in the downloaded workflow artifact.' >&2
+            find ./artifact -maxdepth 3 -type f -print
+            exit 1
+          fi
+          echo "path=$exe" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$exe")" >> "$GITHUB_OUTPUT"
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.0-build10
+          name: MarkHotspot Windows x64 — Build 10
+          body: |
+            Latest successful Windows x64 build from workflow run #10.
+            Commit: 3f3540dca9e361203c6489c33fa24dfa41e92a2e
+          files: ${{ steps.exe.outputs.path }}
+          fail_on_unmatched_files: true
