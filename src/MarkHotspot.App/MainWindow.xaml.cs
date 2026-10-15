@@ -811,36 +811,99 @@ public partial class MainWindow : Window
 
     private async Task ToggleDeviceBlockAsync()
     {
-        if (DevicesList.SelectedItem is not DeviceRow selected) { SetStatus("Selecciona primero un dispositivo detectado."); return; }
-        var safeName = "MarkHotspot-Block-" + selected.Ip.Replace('.', '-');
-        if (IsBlockedDevice(selected.Mac, selected.Ip))
+        if (DevicesList.SelectedItem is not DeviceRow selected)
         {
-            var previous = _settings.BlockedDevices.Where(b => b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase))).ToList();
-            _settings.BlockedDevices.RemoveAll(b => b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
-                (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase)));
-            try { SaveSettings(); }
-            catch (Exception ex) { _settings.BlockedDevices.AddRange(previous); SetStatus("No se pudo guardar el desbloqueo: " + ex.Message); return; }
-            await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-In\"");
-            await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-Out\"");
-            foreach (var row in _devices) row.RefreshBlockedState();
-            UpdateBlockButton();
-            SetStatus($"Dispositivo {selected.Ip} desbloqueado. Las reglas locales de Firewall no garantizan filtrar el tráfico reenviado del hotspot.");
+            SetStatus("Selecciona primero un dispositivo detectado.");
             return;
         }
-        if (!IPAddress.TryParse(selected.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
-        { SetStatus("La dirección IP seleccionada no es válida."); return; }
-        var entry = new BlockedDevice { Ip = selected.Ip, Mac = selected.Mac, AddedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm") };
-        _settings.BlockedDevices.Add(entry);
-        try { SaveSettings(); }
-        catch (Exception ex) { _settings.BlockedDevices.Remove(entry); SetStatus("No se pudo guardar el bloqueo: " + ex.Message); return; }
-        var inbound = await RunNetshAsync($"advfirewall firewall add rule name=\"{safeName}-In\" dir=in action=block remoteip={selected.Ip} enable=yes");
-        var outbound = await RunNetshAsync($"advfirewall firewall add rule name=\"{safeName}-Out\" dir=out action=block remoteip={selected.Ip} enable=yes");
-        foreach (var row in _devices) row.RefreshBlockedState();
-        UpdateBlockButton();
-        SetStatus(inbound.ExitCode == 0 && outbound.ExitCode == 0
-            ? $"Dispositivo {selected.Ip} marcado como bloqueado. Las reglas locales no garantizan filtrar el tráfico reenviado del hotspot."
-            : $"Se guardó el bloqueo de {selected.Ip}, pero falló alguna regla de Firewall. Ejecuta como administrador.");
+
+        if (!IPAddress.TryParse(selected.Ip, out var parsedIp) ||
+            parsedIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            SetStatus("La dirección IPv4 del dispositivo no es válida.");
+            return;
+        }
+
+        var matchingEntries = _settings.BlockedDevices.Where(b =>
+            b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase))).ToList();
+
+        if (matchingEntries.Count > 0)
+        {
+            try
+            {
+                foreach (var entry in matchingEntries)
+                    WfpDeviceBlocker.Unblock(entry.Ip);
+                WfpDeviceBlocker.Unblock(selected.Ip);
+                _settings.BlockedDevices.RemoveAll(b =>
+                    b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase)));
+                SaveSettings();
+                var safeName = "MarkHotspot-Block-" + selected.Ip.Replace('.', '-');
+                await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-In\"");
+                await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-Out\"");
+                foreach (var row in _devices) row.RefreshBlockedState();
+                UpdateBlockButton();
+                SetStatus($"Filtro de red eliminado. {selected.Ip} ya no aparece como bloqueado.");
+            }
+            catch (Exception ex)
+            {
+                SetStatus("No se pudo quitar el bloqueo de red: " + ex.Message);
+            }
+            return;
+        }
+
+        var interfaceIndex = FindHotspotInterfaceIndex(selected.Ip);
+        if (interfaceIndex is null)
+        {
+            SetStatus("No se encontró la interfaz del hotspot para este dispositivo. Actualiza la lista y vuelve a intentarlo.");
+            return;
+        }
+
+        try
+        {
+            // Drop incoming IPv4 packets at Windows Filtering Platform before they can be forwarded by Internet Connection Sharing.
+            WfpDeviceBlocker.Block(selected.Ip, interfaceIndex.Value);
+            var entry = new BlockedDevice
+            {
+                Ip = selected.Ip,
+                Mac = selected.Mac,
+                AddedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm")
+            };
+            _settings.BlockedDevices.Add(entry);
+            try { SaveSettings(); }
+            catch
+            {
+                _settings.BlockedDevices.Remove(entry);
+                WfpDeviceBlocker.Unblock(selected.Ip);
+                throw;
+            }
+
+            foreach (var row in _devices) row.RefreshBlockedState();
+            UpdateBlockButton();
+            SetStatus($"Bloqueo de red aplicado a {selected.Name} ({selected.Ip}) mediante Windows Filtering Platform.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("No se pudo aplicar el filtro de bloqueo. El dispositivo no se marcará como bloqueado: " + ex.Message);
+        }
+    }
+
+    private static uint? FindHotspotInterfaceIndex(string clientIp)
+    {
+        foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces()
+                     .Where(n => n.OperationalStatus == OperationalStatus.Up))
+        {
+            var ipv4 = adapter.GetIPProperties().GetIPv4Properties();
+            if (ipv4 is null) continue;
+            foreach (var address in adapter.GetIPProperties().UnicastAddresses)
+            {
+                if (address.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                if (IsInSameSubnet(address.Address.ToString(), clientIp))
+                    return (uint)ipv4.Index;
+            }
+        }
+        return null;
     }
 
     private async Task<(int ExitCode, string Output)> RunNetshAsync(string arguments) =>
