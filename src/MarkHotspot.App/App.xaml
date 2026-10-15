@@ -8,6 +8,10 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#3B82F6"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#9AA4B2"/>
         <SolidColorBrush x:Key="MainTextBrush" Color="#F4F6FA"/>
+        <SolidColorBrush x:Key="SelectionBrush" Color="#2A3B59"/>
+        <SolidColorBrush x:Key="HoverBrush" Color="#263244"/>
+        <SolidColorBrush x:Key="ScrollTrackBrush" Color="#17191C"/>
+        <SolidColorBrush x:Key="ScrollThumbBrush" Color="#666B72"/>
 
         <Style x:Key="ThemeSwitchStyle" TargetType="ToggleButton">
             <Setter Property="Width" Value="48"/>
@@ -18,14 +22,14 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Track" Width="48" Height="26" CornerRadius="13" Background="{StaticResource MutedBrush}">
+                        <Border x:Name="Track" Width="48" Height="26" CornerRadius="13" Background="{DynamicResource MutedBrush}">
                             <Grid>
                                 <Ellipse x:Name="Thumb" Width="20" Height="20" Fill="White" HorizontalAlignment="Left" Margin="3"/>
                             </Grid>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="Track" Property="Background" Value="{DynamicResource AccentBrush}"/>
                                 <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
@@ -38,16 +42,16 @@
         </Style>
 
         <Style TargetType="TextBox">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource MainTextBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="CaretBrush" Value="{StaticResource MainTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource MainTextBrush}"/>
         </Style>
         <Style TargetType="PasswordBox">
-            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource MainTextBrush}"/>
-            <Setter Property="BorderBrush" Value="{StaticResource MutedBrush}"/>
-            <Setter Property="CaretBrush" Value="{StaticResource MainTextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="CaretBrush" Value="{DynamicResource MainTextBrush}"/>
         </Style>
 
         <!-- Rounded navigation pills used throughout the left sidebar. -->
@@ -55,7 +59,7 @@
             <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
             <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MutedBrush}"/>
             <Setter Property="Padding" Value="14,12"/>
             <Setter Property="Margin" Value="0,0,0,8"/>
             <Setter Property="BorderThickness" Value="0"/>
@@ -71,7 +75,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="#263244"/>
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource HoverBrush}"/>
                             </Trigger>
                             <Trigger Property="IsPressed" Value="True">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.78"/>
@@ -91,7 +95,7 @@
             <Setter Property="Padding" Value="16,10"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
-            <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
