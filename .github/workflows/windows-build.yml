@@ -1,4 +1,4 @@
-name: Windows x64 build
+name: Windows x64 build and release
 
 on:
   push:
@@ -15,24 +15,51 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate next public version
+        id: version
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $latestTag = gh api "repos/$env:GITHUB_REPOSITORY/releases/latest" --jq .tag_name
+          if ($LASTEXITCODE -ne 0 -or $latestTag -notmatch '^v(\d+)\.(\d+)\.(\d+)-Public_Release$') {
+            throw "No se pudo leer la última versión estable con formato vX.Y.Z-Public_Release."
+          }
+          $major = [int]$Matches[1]
+          $minor = [int]$Matches[2]
+          $patch = [int]$Matches[3] + 1
+          $tag = "v$major.$minor.$patch-Public_Release"
+          $version = "$major.$minor.$patch"
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "Versión calculada: $tag"
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
       - name: Restore
         run: dotnet restore MarkHotspot.sln
+
       - name: Build Release x64
-        run: dotnet build MarkHotspot.sln --configuration Release --no-restore -p:Platform=x64 -p:Version=1.0.0.${{ github.run_number }}
+        run: dotnet build MarkHotspot.sln --configuration Release --no-restore -p:Platform=x64 -p:Version=${{ steps.version.outputs.version }}
+
       - name: Publish self-contained x64
-        run: dotnet publish src/MarkHotspot.App/MarkHotspot.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=1.0.0.${{ github.run_number }} --output artifacts/MarkHotspot
+        run: dotnet publish src/MarkHotspot.App/MarkHotspot.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ steps.version.outputs.version }} --output artifacts/MarkHotspot
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -40,3 +67,12 @@ jobs:
           path: artifacts/MarkHotspot/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish GitHub Release with changelog
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $changelog = "Nuevas mejores en estabilidad y corrección de errores"
+          gh release create $tag "artifacts/MarkHotspot/MarkHotspot.exe" --title $tag --notes $changelog
