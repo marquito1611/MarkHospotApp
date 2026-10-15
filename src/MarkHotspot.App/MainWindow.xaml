@@ -2,32 +2,32 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="MarkHotspot" Icon="Assets/MarkHotspotApp.ico" Height="820" Width="1160" MinHeight="680" MinWidth="940"
-        WindowStartupLocation="CenterScreen" Background="{StaticResource BackgroundBrush}"
-        Foreground="{StaticResource MainTextBrush}">
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource BackgroundBrush}"
+        Foreground="{DynamicResource MainTextBrush}">
     <Window.Resources>
         <Style TargetType="{x:Type GridViewColumnHeader}">
             <Setter Property="Background" Value="#1769AA"/><Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Padding" Value="9,7"/><Setter Property="BorderBrush" Value="#1769AA"/>
         </Style>
         <Style TargetType="{x:Type ListViewItem}">
-            <Setter Property="Foreground" Value="#D1D5DB"/><Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/><Setter Property="Background" Value="Transparent"/>
             <Setter Property="Padding" Value="5,4"/><Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Style.Triggers>
-                <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="#55585D"/><Setter Property="Foreground" Value="#D1D5DB"/></Trigger>
-                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#34373B"/></Trigger>
+                <Trigger Property="IsSelected" Value="True"><Setter Property="Background" Value="{DynamicResource SelectionBrush}"/><Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/></Trigger>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="{DynamicResource HoverBrush}"/></Trigger>
             </Style.Triggers>
         </Style>
-        <Style TargetType="{x:Type ScrollBar}"><Setter Property="Background" Value="#17191C"/><Setter Property="Foreground" Value="#666B72"/></Style>
+        <Style TargetType="{x:Type ScrollBar}"><Setter Property="Background" Value="{DynamicResource ScrollTrackBrush}"/><Setter Property="Foreground" Value="{DynamicResource ScrollThumbBrush}"/></Style>
     </Window.Resources>
 
     <Grid Margin="24">
         <Grid.ColumnDefinitions><ColumnDefinition Width="220"/><ColumnDefinition Width="24"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Border Grid.Column="0" Background="{StaticResource PanelBrush}" CornerRadius="18" Padding="18">
+        <Border Grid.Column="0" Background="{DynamicResource PanelBrush}" CornerRadius="18" Padding="18">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="0,0,0,24">
-                    <TextBlock Text="MARK" FontSize="13" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                    <TextBlock Text="MARK" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                     <TextBlock Text="Hotspot" FontSize="27" FontWeight="Bold"/>
-                    <TextBlock Text="NETWORK CONTROL" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0"/>
+                    <TextBlock Text="NETWORK CONTROL" FontSize="10" Foreground="{DynamicResource MutedBrush}" Margin="0,3,0,0"/>
                 </StackPanel>
                 <StackPanel>
                     <Button x:Name="HomeNavButton" Content="◉   Panel principal" Style="{StaticResource NavButtonStyle}" Click="HomeNav_Click"/>
@@ -42,41 +42,41 @@
             <Grid>
                 <StackPanel x:Name="HomePage">
                 <TextBlock Text="Panel principal" FontSize="28" FontWeight="Bold"/>
-                <TextBlock Text="Estado de red y punto de acceso" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,0,0,16">
+                <TextBlock Text="Estado de red y punto de acceso" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
+                <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,0,0,16">
                     <StackPanel>
-                        <TextBlock Text="PUNTO DE ACCESO WI-FI" FontSize="11" Foreground="{StaticResource MutedBrush}"/>
+                        <TextBlock Text="PUNTO DE ACCESO WI-FI" FontSize="11" Foreground="{DynamicResource MutedBrush}"/>
                         <TextBlock x:Name="HotspotStateText" Text="Activando Hotspot…" FontSize="24" FontWeight="Bold" Margin="0,8,0,4"/>
-                        <TextBlock x:Name="HotspotDetailText" Text="Preparando diagnóstico de red…" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
+                        <TextBlock x:Name="HotspotDetailText" Text="Preparando diagnóstico de red…" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,16"/>
                         <WrapPanel><Button x:Name="StartButton" Content="Activar Mobile Hotspot" Click="StartButton_Click"/><Button x:Name="StopButton" Content="Detener hotspot" Click="StopButton_Click"/><Button x:Name="RefreshButton" Content="Actualizar red" Click="RefreshButton_Click"/></WrapPanel>
                     </StackPanel>
                 </Border>
                 <Grid Margin="0,0,0,16">
                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20">
-                        <StackPanel><TextBlock Text="ADAPTADORES DE RED" FontSize="11" Foreground="{StaticResource MutedBrush}"/><TextBlock x:Name="AdapterCountText" Text="—" FontSize="30" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Text="Interfaces detectadas en Windows" Foreground="{StaticResource MutedBrush}" FontSize="12"/></StackPanel>
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
+                        <StackPanel><TextBlock Text="ADAPTADORES DE RED" FontSize="11" Foreground="{DynamicResource MutedBrush}"/><TextBlock x:Name="AdapterCountText" Text="—" FontSize="30" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Text="Interfaces detectadas en Windows" Foreground="{DynamicResource MutedBrush}" FontSize="12"/></StackPanel>
                     </Border>
-                    <Border Grid.Column="2" Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20">
-                        <StackPanel><TextBlock Text="CONFIGURACIÓN WI-FI" FontSize="11" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="SSID y contraseña" FontSize="19" FontWeight="Bold" Margin="0,8,0,12"/><TextBlock Text="Nombre de red" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="SsidBox" Text="MarkHotspot" Padding="8" Margin="0,0,0,10"/><TextBlock Text="Contraseña (8–63 caracteres)" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/><Grid><PasswordBox x:Name="PasswordBox" Password="ChangeMe123" Padding="8" Margin="0,0,36,0"/><TextBox x:Name="PasswordVisibleBox" Text="ChangeMe123" Padding="8" Margin="0,0,36,0" Visibility="Collapsed"/><Button x:Name="TogglePasswordButton" Width="32" Height="30" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0" ToolTip="Mostrar u ocultar contraseña" Click="TogglePasswordButton_Click"><Canvas Width="20" Height="20"><Path Data="M 1,10 C 4,4 8,1.5 10,1.5 C 14,1.5 18,4 21,10 C 18,16 14,18.5 10,18.5 C 6,18.5 3,15.5 1,10 Z" Stroke="{StaticResource MainTextBrush}" StrokeThickness="1.7" Fill="Transparent" Stretch="Fill"/><Ellipse Canvas.Left="6.5" Canvas.Top="6.5" Width="7" Height="7" Stroke="{StaticResource MainTextBrush}" StrokeThickness="1.7" Fill="Transparent"/><Path x:Name="PasswordEyeSlashPath" Data="M 2,2 L 18,18" Stroke="{StaticResource MainTextBrush}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/></Canvas></Button></Grid></StackPanel>
+                    <Border Grid.Column="2" Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
+                        <StackPanel><TextBlock Text="CONFIGURACIÓN WI-FI" FontSize="11" Foreground="{DynamicResource MutedBrush}"/><TextBlock Text="SSID y contraseña" FontSize="19" FontWeight="Bold" Margin="0,8,0,12"/><TextBlock Text="Nombre de red" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="SsidBox" Text="MarkHotspot" Padding="8" Margin="0,0,0,10"/><TextBlock Text="Contraseña (8–63 caracteres)" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><Grid><PasswordBox x:Name="PasswordBox" Password="ChangeMe123" Padding="8" Margin="0,0,36,0"/><TextBox x:Name="PasswordVisibleBox" Text="ChangeMe123" Padding="8" Margin="0,0,36,0" Visibility="Collapsed"/><Button x:Name="TogglePasswordButton" Width="32" Height="30" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0" ToolTip="Mostrar u ocultar contraseña" Click="TogglePasswordButton_Click"><Canvas Width="20" Height="20"><Path Data="M 1,10 C 4,4 8,1.5 10,1.5 C 14,1.5 18,4 21,10 C 18,16 14,18.5 10,18.5 C 6,18.5 3,15.5 1,10 Z" Stroke="{DynamicResource MainTextBrush}" StrokeThickness="1.7" Fill="Transparent" Stretch="Fill"/><Ellipse Canvas.Left="6.5" Canvas.Top="6.5" Width="7" Height="7" Stroke="{DynamicResource MainTextBrush}" StrokeThickness="1.7" Fill="Transparent"/><Path x:Name="PasswordEyeSlashPath" Data="M 2,2 L 18,18" Stroke="{DynamicResource MainTextBrush}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/></Canvas></Button></Grid></StackPanel>
                     </Border>
                 </Grid>
-                <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20">
+                <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
                     <StackPanel><TextBlock Text="Interfaces de red" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="150" MaxHeight="220">
+                        <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource MainTextBrush}" MinHeight="150" MaxHeight="220">
                             <ListView.View><GridView><GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="230"/><GridViewColumn Header="Tipo" DisplayMemberBinding="{Binding Type}" Width="120"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding Status}" Width="100"/><GridViewColumn Header="Velocidad" DisplayMemberBinding="{Binding Speed}" Width="110"/></GridView></ListView.View>
                         </ListView>
-                        <TextBlock Text="El bloqueo utiliza Windows Filtering Platform para descartar paquetes IPv4 entrantes del cliente en la interfaz del hotspot. El estado Bloqueado solo se guarda si Windows acepta el filtro." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                        <TextBlock Text="El bloqueo utiliza Windows Filtering Platform para descartar paquetes IPv4 entrantes del cliente en la interfaz del hotspot. El estado Bloqueado solo se guarda si Windows acepta el filtro." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
                     </StackPanel>
                 </Border>
 
                 </StackPanel>
                 <StackPanel x:Name="DevicesPage" Visibility="Collapsed">
                     <TextBlock Text="Dispositivos" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Text="Solo clientes de la red local del hotspot" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
+                    <TextBlock Text="Solo clientes de la red local del hotspot" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
                         <StackPanel>
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Identificación por MAC, estado de conexión y tráfico por dispositivo en tiempo real." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="DevicesCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/><Button x:Name="ScanDevicesButton" Content="Buscar dispositivos" Click="ScanDevicesButton_Click"/></StackPanel></Grid>
-                        <ListView x:Name="DevicesList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="150" MaxHeight="240" SelectionChanged="DevicesList_SelectionChanged">
+                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Identificación por MAC, estado de conexión y tráfico por dispositivo en tiempo real." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="DevicesCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/><Button x:Name="ScanDevicesButton" Content="Buscar dispositivos" Click="ScanDevicesButton_Click"/></StackPanel></Grid>
+                        <ListView x:Name="DevicesList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource MainTextBrush}" MinHeight="150" MaxHeight="240" SelectionChanged="DevicesList_SelectionChanged">
                             <ListView.View><GridView><GridViewColumn Header="Dispositivo" Width="230"><GridViewColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding DeviceIcon}" FontSize="17" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold"/></StackPanel></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding DisplayState}" Width="125"/><GridViewColumn Header="Tráfico" DisplayMemberBinding="{Binding TrafficText}" Width="180"/></GridView></ListView.View>
                         </ListView>
                         <WrapPanel Margin="0,10,0,0"><Button x:Name="BlockDeviceButton" Content="Bloquear dispositivo" Click="BlockDeviceButton_Click" IsEnabled="False"/></WrapPanel>
@@ -86,33 +86,33 @@
                                 <Separator Margin="0,18,0,18"/>
 
                     <TextBlock Text="Control de tráfico" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Text="Límites independientes de descarga y subida por dispositivo" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,18"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,14">
+                    <TextBlock Text="Límites independientes de descarga y subida por dispositivo" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,18"/>
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,14">
                         <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                            <StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Reglas identificadas por MAC y actualizadas con la IP detectada." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel>
+                            <StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Reglas identificadas por MAC y actualizadas con la IP detectada." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel>
                             <Button Grid.Column="1" Content="Actualizar lista" Click="ScanDevicesButton_Click" VerticalAlignment="Center"/>
                         </Grid>
                     </Border>
                     <ItemsControl x:Name="TrafficLimitsList">
                         <ItemsControl.ItemTemplate><DataTemplate>
-                            <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,12">
+                            <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,12">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="44"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                        <Border Background="{StaticResource BackgroundBrush}" CornerRadius="10" Width="42" Height="42" VerticalAlignment="Center"><TextBlock Text="{Binding DeviceIcon}" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
-                                        <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Ip}" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,2,0,0"/><TextBlock Text="{Binding Mac}" Foreground="{StaticResource MutedBrush}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
+                                        <Border Background="{DynamicResource BackgroundBrush}" CornerRadius="10" Width="42" Height="42" VerticalAlignment="Center"><TextBlock Text="{Binding DeviceIcon}" FontSize="21" HorizontalAlignment="Center" VerticalAlignment="Center"/></Border>
+                                        <StackPanel Grid.Column="1" Margin="12,0,8,0" VerticalAlignment="Center"><TextBlock Text="{Binding Name}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/><TextBlock Text="{Binding Ip}" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,2,0,0"/><TextBlock Text="{Binding Mac}" Foreground="{DynamicResource MutedBrush}" FontSize="11" Margin="0,2,0,0"/></StackPanel>
                                         <Border Grid.Column="2" Background="{Binding StateBrush}" CornerRadius="8" Padding="9,5" VerticalAlignment="Center"><TextBlock Text="{Binding State}" FontSize="11" FontWeight="SemiBold"/></Border>
                                     </Grid>
                                     <Separator Margin="0,0,0,12"/>
-                                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="↓  Límite de descarga" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding DownloadMbps, StringFormat={}{0} Mbps}" Foreground="{StaticResource AccentBrush}" FontSize="16" FontWeight="Bold"/></Grid>
+                                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="↓  Límite de descarga" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding DownloadMbps, StringFormat={}{0} Mbps}" Foreground="{DynamicResource AccentBrush}" FontSize="16" FontWeight="Bold"/></Grid>
                                     <Slider Minimum="1" Maximum="100" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding DownloadMbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,12"/>
-                                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="↑  Límite de subida" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding UploadMbps, StringFormat={}{0} Mbps}" Foreground="{StaticResource AccentBrush}" FontSize="16" FontWeight="Bold"/></Grid>
+                                    <Grid Margin="0,0,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="↑  Límite de subida" FontWeight="SemiBold" VerticalAlignment="Center"/><TextBlock Grid.Column="1" Text="{Binding UploadMbps, StringFormat={}{0} Mbps}" Foreground="{DynamicResource AccentBrush}" FontSize="16" FontWeight="Bold"/></Grid>
                                     <Slider Minimum="1" Maximum="50" TickFrequency="1" IsSnapToTickEnabled="True" Value="{Binding UploadMbps, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Margin="0,0,0,14"/>
-                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding TrafficText}" Foreground="{StaticResource MutedBrush}" VerticalAlignment="Center" FontSize="12"/><Button Grid.Column="1" Content="Guardar límites" Tag="{Binding}" Click="ApplyDeviceLimit_Click"/></Grid>
+                                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><TextBlock Text="{Binding TrafficText}" Foreground="{DynamicResource MutedBrush}" VerticalAlignment="Center" FontSize="12"/><Button Grid.Column="1" Content="Guardar límites" Tag="{Binding}" Click="ApplyDeviceLimit_Click"/></Grid>
                                 </StackPanel>
                             </Border>
                         </DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <Border Visibility="Collapsed" Background="{StaticResource PanelBrush}" CornerRadius="14" Padding="16" Margin="0,0,0,12"><StackPanel><TextBlock Text="Estado del motor de limitación" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="TrafficEngineStatusText" Text="Motor de shaping por cliente pendiente de integración." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></Border>
+                    <Border Visibility="Collapsed" Background="{DynamicResource PanelBrush}" CornerRadius="14" Padding="16" Margin="0,0,0,12"><StackPanel><TextBlock Text="Estado del motor de limitación" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="TrafficEngineStatusText" Text="Motor de shaping por cliente pendiente de integración." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></Border>
                 
                 <Separator Margin="0,18,0,18"/>
 
@@ -124,52 +124,74 @@
                 
                 <StackPanel x:Name="AboutPage" Visibility="Collapsed">
                     <TextBlock Text="Acerca de" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Text="Información de MarkHotspot" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="18" Padding="24" Margin="0,0,0,16">
+                    <TextBlock Text="Información de MarkHotspot" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="18" Padding="24" Margin="0,0,0,16">
                         <StackPanel>
-                            <TextBlock Text="MARK" FontSize="13" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                            <TextBlock Text="MARK" FontSize="13" FontWeight="Bold" Foreground="{DynamicResource AccentBrush}"/>
                             <TextBlock Text="MarkHotspot" FontSize="30" FontWeight="Bold" Margin="0,4,0,8"/>
-                            <TextBlock Text="Herramienta para administrar el punto de acceso Wi-Fi, ver dispositivos conectados y configurar controles de tráfico desde una interfaz sencilla." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="14"/>
+                            <TextBlock Text="Herramienta para administrar el punto de acceso Wi-Fi, ver dispositivos conectados y configurar controles de tráfico desde una interfaz sencilla." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" FontSize="14"/>
                             <Separator Margin="0,20,0,16"/>
-                            <TextBlock Text="Creada por" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                            <TextBlock Text="Creada por" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
                             <TextBlock Text="  @marquito1611" FontSize="18" FontWeight="SemiBold" Margin="0,5,0,0"/>
-                            <TextBlock Text="GitHub" Foreground="{StaticResource AccentBrush}" Margin="0,3,0,0"/>
+                            <TextBlock Text="GitHub" Foreground="{DynamicResource AccentBrush}" Margin="0,3,0,0"/>
                         </StackPanel>
                     </Border>
-                    <TextBlock Text="Nota: las funciones de bloqueo y limitación real dependen de la integración y validación del motor de filtrado de Windows." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="2,0,2,0"/>
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="18" Padding="22" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="Actualizaciones" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <TextBlock x:Name="InstalledVersionText" Text="Versión instalada" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,0,0,12"/>
+                            <Button x:Name="CheckForUpdatesButton" Content="Buscar actualizaciones" Click="CheckForUpdatesButton_Click" HorizontalAlignment="Left"/>
+                            <TextBlock x:Name="UpdateStatusText" Text="Comprueba si hay una versión estable nueva en GitHub Releases." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <StackPanel x:Name="UpdateProgressPanel" Visibility="Collapsed" Margin="0,16,0,0">
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock Text="Progreso de descarga" FontWeight="SemiBold"/>
+                                    <TextBlock x:Name="UpdatePercentText" Grid.Column="1" Text="0 %" Foreground="{DynamicResource AccentBrush}" FontWeight="Bold"/>
+                                </Grid>
+                                <ProgressBar x:Name="UpdateProgressBar" Minimum="0" Maximum="100" Value="0" Height="8" BorderThickness="0" Background="{DynamicResource HoverBrush}" Foreground="{DynamicResource AccentBrush}"/>
+                                <TextBlock x:Name="UpdateDownloadedText" Text="Descargado: 0 MB de —" Margin="0,10,0,0" FontWeight="SemiBold"/>
+                                <Grid Margin="0,8,0,0">
+                                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="UpdateSpeedText" Text="Velocidad: calculando…" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
+                                    <TextBlock x:Name="UpdateRemainingText" Grid.Column="1" Text="Restante: calculando…" Foreground="{DynamicResource MutedBrush}" FontSize="12"/>
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="Nota: las funciones de bloqueo y limitación real dependen de la integración y validación del motor de filtrado de Windows." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="2,0,2,0"/>
                 </StackPanel>
                 <StackPanel x:Name="SettingsPage" Visibility="Collapsed">
                     <TextBlock Text="Configuración" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Text="Ajustes del punto de acceso" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="22">
+                    <TextBlock Text="Ajustes del punto de acceso" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="22">
                         <StackPanel>
-                            <TextBlock Text="Nombre de red (SSID)" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/>
+                            <TextBlock Text="Nombre de red (SSID)" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
                             <TextBox x:Name="SettingsSsidBox" Padding="8" Margin="0,0,0,12" Text="MarkHotspot"/>
-                            <TextBlock Text="Contraseña" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/>
-                            <TextBlock Text="Guarda aquí el nombre de red. Para cambiar la contraseña, usa el campo del Panel principal." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"/><Button Content="Guardar nombre de red" Click="SaveSettingsButton_Click" HorizontalAlignment="Left"/>
+                            <TextBlock Text="Contraseña" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
+                            <TextBlock Text="Guarda aquí el nombre de red. Para cambiar la contraseña, usa el campo del Panel principal." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,12"/><Button Content="Guardar nombre de red" Click="SaveSettingsButton_Click" HorizontalAlignment="Left"/>
                     </StackPanel>
                     </Border>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,16,0,0">
+                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,16,0,0">
                         <StackPanel>
                             <TextBlock Text="Inicio automático" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
-                            <TextBlock Text="Iniciar MarkHotspot automáticamente al entrar en Windows." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                            <TextBlock Text="Iniciar MarkHotspot automáticamente al entrar en Windows." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
                             <Grid Margin="0,0,0,16">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel><TextBlock Text="Ejecutar al iniciar Windows" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="La aplicación intentará activar el Mobile Hotspot al abrirse." Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
-                                <CheckBox x:Name="AutoStartToggle" Grid.Column="1" VerticalAlignment="Center" Checked="AutoStartToggle_Checked" Unchecked="AutoStartToggle_Unchecked" IsChecked="True"/>
+                                <StackPanel><TextBlock Text="Ejecutar al iniciar Windows" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="La aplicación intentará activar el Mobile Hotspot al abrirse." Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
+                                <ToggleButton x:Name="AutoStartToggle" Grid.Column="1" Style="{StaticResource ThemeSwitchStyle}" VerticalAlignment="Center" Checked="AutoStartToggle_Checked" Unchecked="AutoStartToggle_Unchecked"/>
                             </Grid>
                             <Separator Margin="0,0,0,16"/>
                             <TextBlock Text="Temas" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
-                            <TextBlock Text="Elige la apariencia de MarkHotspot. Solo puede estar activo un tema a la vez." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,18"/>
+                            <TextBlock Text="Elige la apariencia de MarkHotspot. Solo puede estar activo un tema a la vez." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,18"/>
                             <Grid Margin="0,0,0,14">
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel><TextBlock Text="Claro" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="Fondo blanco y detalles azules" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
+                                <StackPanel><TextBlock Text="Claro" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="Fondo blanco y detalles azules" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
                                 <ToggleButton x:Name="LightThemeToggle" Grid.Column="1" Style="{StaticResource ThemeSwitchStyle}" VerticalAlignment="Center" Checked="LightThemeToggle_Checked" Unchecked="LightThemeToggle_Unchecked"/>
                             </Grid>
                             <Separator Margin="0,0,0,14"/>
                             <Grid>
                                 <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-                                <StackPanel><TextBlock Text="Oscuro" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="Colores oscuros actuales" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
+                                <StackPanel><TextBlock Text="Oscuro" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="Colores oscuros actuales" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
                                 <ToggleButton x:Name="DarkThemeToggle" Grid.Column="1" Style="{StaticResource ThemeSwitchStyle}" VerticalAlignment="Center" Checked="DarkThemeToggle_Checked" Unchecked="DarkThemeToggle_Unchecked"/>
                             </Grid>
                         </StackPanel>
