@@ -347,7 +347,19 @@ public partial class MainWindow : Window
             if (match.Success) return match.Groups[1].Value.Trim();
         }
         catch { }
-        return "Dispositivo " + mac[^5..].Replace(":", "");
+        return SafeDeviceNameFromMac(mac);
+    }
+
+    private static string SafeDeviceNameFromMac(string? mac)
+    {
+        // Some Windows neighbor-table rows can contain a blank or malformed MAC.
+        // Never slice from the end unless the string is long enough.
+        var normalized = (mac ?? string.Empty).Trim().Replace("-", ":");
+        if (normalized.Length == 0)
+            return "Dispositivo desconocido";
+        var suffix = normalized.Length > 5 ? normalized[^5..] : normalized;
+        suffix = suffix.Replace(":", string.Empty);
+        return string.IsNullOrWhiteSpace(suffix) ? "Dispositivo desconocido" : "Dispositivo " + suffix;
     }
 
     private static async Task<bool> PingDeviceAsync(string ip)
@@ -650,7 +662,7 @@ public partial class MainWindow : Window
         private string _name;
         private string _state;
         private string _trafficText = "↑ —   ↓ —";
-        public DeviceRow(string ip, string mac, string state) { _ip = ip; Mac = mac; _name = "Dispositivo " + mac[^5..].Replace(":", ""); _state = state; }
+        public DeviceRow(string ip, string mac, string state) { _ip = ip; Mac = mac; _name = SafeDeviceNameFromMac(mac); _state = state; }
         public string Ip { get => _ip; set { _ip = value; OnPropertyChanged(); } }
         public string Mac { get; }
         public string Name { get => _name; set { _name = value; OnPropertyChanged(); OnPropertyChanged(nameof(DeviceIcon)); } }
