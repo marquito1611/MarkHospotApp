@@ -18,7 +18,7 @@ public partial class MainWindow
 
     private static HttpClient CreateUpdateHttpClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
+        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(60) };
         client.DefaultRequestHeaders.UserAgent.ParseAdd("MarkHotspot-Updater/1.0");
         client.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
         return client;
@@ -175,7 +175,7 @@ public partial class MainWindow
 
         UpdateDownloadedText.Text = "Descargado: " + FormatMegabytes(progress.Downloaded) + " de " +
             (progress.Total > 0 ? FormatMegabytes(progress.Total) : "—");
-        UpdateSpeedText.Text = "Velocidad: " + FormatMegabytes(progress.BytesPerSecond) + "/s";
+        UpdateSpeedText.Text = "Velocidad: " + FormatSpeed(progress.BytesPerSecond);
         if (progress.Total > 0 && progress.BytesPerSecond > 0)
         {
             var remainingSeconds = Math.Max(0, (progress.Total - progress.Downloaded) / progress.BytesPerSecond);
@@ -186,6 +186,11 @@ public partial class MainWindow
 
     private static string FormatMegabytes(double bytes) =>
         (bytes / 1_000_000d).ToString("0.0", CultureInfo.CurrentCulture) + " MB";
+
+    private static string FormatSpeed(double bytesPerSecond) =>
+        bytesPerSecond >= 1_000_000d
+            ? (bytesPerSecond / 1_000_000d).ToString("0.0", CultureInfo.CurrentCulture) + " MB/s"
+            : (bytesPerSecond / 1_000d).ToString("0", CultureInfo.CurrentCulture) + " KB/s";
 
     private sealed record DownloadProgress(long Downloaded, long Total, double BytesPerSecond);
 
