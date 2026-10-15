@@ -24,7 +24,8 @@
             </DockPanel>
         </Border>
         <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
-            <StackPanel>
+            <Grid>
+                <StackPanel x:Name="HomePage">
                 <TextBlock Text="Panel principal" FontSize="28" FontWeight="Bold"/>
                 <TextBlock Text="Estado de red y punto de acceso" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
                 <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,0,0,16">
@@ -53,6 +54,7 @@
                     </StackPanel>
                 </Border>
 
+                </StackPanel>
                 <StackPanel x:Name="DevicesPage" Visibility="Collapsed">
                     <TextBlock Text="Dispositivos" FontSize="28" FontWeight="Bold"/>
                     <TextBlock Text="Solo clientes de la red local del hotspot" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
@@ -105,7 +107,7 @@
                         </StackPanel>
                     </Border>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
         </ScrollViewer>
     </Grid>
 </Window>
