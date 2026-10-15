@@ -14,6 +14,7 @@ using System.Collections.Concurrent;
 using SharpPcap;
 using PacketDotNet;
 using System.Windows.Threading;
+using Application = System.Windows.Application;
 
 namespace MarkHotspot;
 
@@ -33,10 +34,16 @@ public partial class MainWindow : Window
     private readonly string _settingsPath;
     private AppSettings _settings = new();
     private bool _changingTheme;
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
+    private bool _allowExit;
+    private bool _exitInProgress;
 
     public MainWindow()
     {
         InitializeComponent();
+        InitializeTrayIcon();
+        Closing += MainWindow_Closing;
+        StateChanged += MainWindow_StateChanged;
         _settingsPath = Path.Combine(_dataDirectory, "settings.json");
         AdaptersList.ItemsSource = _adapters;
         DevicesList.ItemsSource = _devices;
@@ -65,7 +72,103 @@ public partial class MainWindow : Window
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
             _trafficTimer.Stop();
             StopTrafficCapture();
+            if (_trayIcon is not null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _trayIcon = null;
+            }
         };
+    }
+
+    private void InitializeTrayIcon()
+    {
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("Abrir MarkHotspot", null, (_, _) => ShowFromTray());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("Salir", null, async (_, _) => await ExitApplicationAsync());
+
+        _trayIcon = new System.Windows.Forms.NotifyIcon
+        {
+            Text = "MarkHotspot",
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(
+                Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty)
+                ?? System.Drawing.SystemIcons.Application,
+            ContextMenuStrip = menu,
+            Visible = true
+        };
+        _trayIcon.DoubleClick += (_, _) => ShowFromTray();
+    }
+
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+            HideToTray();
+    }
+
+    private void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        if (_allowExit) return;
+        e.Cancel = true;
+        HideToTray();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        if (_trayIcon is not null)
+        {
+            _trayIcon.BalloonTipTitle = "MarkHotspot";
+            _trayIcon.BalloonTipText = "La aplicación sigue ejecutándose en segundo plano.";
+            _trayIcon.ShowBalloonTip(1200);
+        }
+    }
+
+    private void ShowFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private async Task ExitApplicationAsync()
+    {
+        if (_exitInProgress) return;
+        _exitInProgress = true;
+        try
+        {
+            var result = await RunNetshAsync("wlan stop hostednetwork");
+            if (result.ExitCode != 0)
+            {
+                var answer = System.Windows.MessageBox.Show(
+                    "Windows no confirmó que el hotspot se haya detenido. ¿Quieres salir de MarkHotspot de todos modos?",
+                    "MarkHotspot", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes)
+                {
+                    _exitInProgress = false;
+                    return;
+                }
+            }
+
+            _allowExit = true;
+            if (_trayIcon is not null) _trayIcon.Visible = false;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            var answer = System.Windows.MessageBox.Show(
+                "No se pudo detener el hotspot: " + ex.Message + "\\n\\n¿Quieres salir de todos modos?",
+                "MarkHotspot", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (answer == MessageBoxResult.Yes)
+            {
+                _allowExit = true;
+                if (_trayIcon is not null) _trayIcon.Visible = false;
+                Close();
+            }
+            else _exitInProgress = false;
+        }
     }
 
     private void ShowPage(System.Windows.Controls.StackPanel page)
