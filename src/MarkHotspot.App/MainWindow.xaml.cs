@@ -71,16 +71,14 @@ public partial class MainWindow : Window
     {
         HomePage.Visibility = Visibility.Collapsed;
         DevicesPage.Visibility = Visibility.Collapsed;
-        TrafficPage.Visibility = Visibility.Collapsed;
-        BlacklistPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
+        AboutPage.Visibility = Visibility.Collapsed;
         page.Visibility = Visibility.Visible;
 
         var active = page == HomePage ? HomeNavButton
             : page == DevicesPage ? DevicesNavButton
-            : page == TrafficPage ? TrafficNavButton
-            : page == BlacklistPage ? BlacklistNavButton
-            : SettingsNavButton;
+            : page == SettingsPage ? SettingsNavButton
+            : AboutNavButton;
 
         var selectedBackground = new System.Windows.Media.SolidColorBrush(
             (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
@@ -88,7 +86,7 @@ public partial class MainWindow : Window
         var activeForeground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"];
         var inactiveForeground = (System.Windows.Media.Brush)Application.Current.Resources["MutedBrush"];
 
-        foreach (var button in new[] { HomeNavButton, DevicesNavButton, TrafficNavButton, BlacklistNavButton, SettingsNavButton })
+        foreach (var button in new[] { HomeNavButton, DevicesNavButton, SettingsNavButton, AboutNavButton })
         {
             button.Background = System.Windows.Media.Brushes.Transparent;
             button.Foreground = inactiveForeground;
@@ -154,9 +152,8 @@ public partial class MainWindow : Window
     }
 
     private void DevicesNav_Click(object sender, RoutedEventArgs e) => ShowPage(DevicesPage);
-    private void TrafficNav_Click(object sender, RoutedEventArgs e) => ShowPage(TrafficPage);
-    private void BlacklistNav_Click(object sender, RoutedEventArgs e) => ShowPage(BlacklistPage);
     private void SettingsNav_Click(object sender, RoutedEventArgs e) => ShowPage(SettingsPage);
+    private void AboutNav_Click(object sender, RoutedEventArgs e) => ShowPage(AboutPage);
 
     private void TogglePasswordButton_Click(object sender, RoutedEventArgs e)
     {
