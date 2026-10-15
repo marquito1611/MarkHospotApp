@@ -432,6 +432,7 @@ public partial class MainWindow : Window
     public sealed record BlockedDeviceRow(string Ip, string Mac, string AddedAt);
     private sealed class AppSettings
     {
+        public bool IsDarkTheme { get; set; } = true;
         public string Ssid { get; set; } = "MarkHotspot";
         public string Password { get; set; } = "ChangeMe123";
         public List<BlockedDevice> Blacklist { get; set; } = new();
