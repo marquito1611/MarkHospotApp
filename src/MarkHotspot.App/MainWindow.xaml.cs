@@ -870,11 +870,11 @@ public partial class MainWindow : Window
             Background = (System.Windows.Media.Brush)Application.Current.Resources["PanelBrush"],
             Foreground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"]
         };
-        var root = new StackPanel { Margin = new Thickness(22) };
-        root.Children.Add(new TextBlock { Text = "Nombre actual del dispositivo", FontSize = 13, Margin = new Thickness(0,0,0,8) });
+        var root = new System.Windows.Controls.StackPanel { Margin = new Thickness(22) };
+        root.Children.Add(new System.Windows.Controls.TextBlock { Text = "Nombre actual del dispositivo", FontSize = 13, Margin = new Thickness(0,0,0,8) });
         var nameBox = new System.Windows.Controls.TextBox { Text = selected.Name, Padding = new Thickness(10), FontSize = 14 };
         root.Children.Add(nameBox);
-        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0,20,0,0) };
+        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0,20,0,0) };
         var cancel = new System.Windows.Controls.Button { Content = "Cancelar", MinWidth = 95 };
         cancel.Click += (_, _) => dialog.DialogResult = false;
         var save = new System.Windows.Controls.Button { Content = "Guardar", MinWidth = 95 };
@@ -913,15 +913,15 @@ public partial class MainWindow : Window
             Background = (System.Windows.Media.Brush)Application.Current.Resources["PanelBrush"],
             Foreground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"]
         };
-        var root = new StackPanel { Margin = new Thickness(22) };
-        root.Children.Add(new TextBlock { Text = selected.Name, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,16) });
-        root.Children.Add(new TextBlock { Text = "↑  Velocidad máxima de subida (KB/s)", Margin = new Thickness(0,0,0,5) });
+        var root = new System.Windows.Controls.StackPanel { Margin = new Thickness(22) };
+        root.Children.Add(new System.Windows.Controls.TextBlock { Text = selected.Name, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,16) });
+        root.Children.Add(new System.Windows.Controls.TextBlock { Text = "↑  Velocidad máxima de subida (KB/s)", Margin = new Thickness(0,0,0,5) });
         var uploadBox = new System.Windows.Controls.TextBox { Text = (saved?.UploadKBps ?? Math.Max(1, (saved?.UploadMbps ?? 3) * 125)).ToString(), Padding = new Thickness(9), Margin = new Thickness(0,0,0,14) };
         root.Children.Add(uploadBox);
-        root.Children.Add(new TextBlock { Text = "↓  Velocidad máxima de bajada (KB/s)", Margin = new Thickness(0,0,0,5) });
+        root.Children.Add(new System.Windows.Controls.TextBlock { Text = "↓  Velocidad máxima de bajada (KB/s)", Margin = new Thickness(0,0,0,5) });
         var downloadBox = new System.Windows.Controls.TextBox { Text = (saved?.DownloadKBps ?? Math.Max(1, (saved?.DownloadMbps ?? 10) * 125)).ToString(), Padding = new Thickness(9) };
         root.Children.Add(downloadBox);
-        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0,20,0,0) };
+        var buttons = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = System.Windows.HorizontalAlignment.Right, Margin = new Thickness(0,20,0,0) };
         var cancel = new System.Windows.Controls.Button { Content = "Cancelar", MinWidth = 95 };
         cancel.Click += (_, _) => dialog.DialogResult = false;
         var saveButton = new System.Windows.Controls.Button { Content = "Guardar", MinWidth = 95 };
