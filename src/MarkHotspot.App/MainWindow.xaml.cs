@@ -56,7 +56,32 @@ public partial class MainWindow : Window
         BlacklistPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
         page.Visibility = Visibility.Visible;
+
+        var active = page == HomePage ? HomeNavButton
+            : page == DevicesPage ? DevicesNavButton
+            : page == TrafficPage ? TrafficNavButton
+            : page == BlacklistPage ? BlacklistNavButton
+            : SettingsNavButton;
+
+        var selectedBackground = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
+                _settings.IsDarkTheme ? "#2A3B59" : "#DBEAFE"));
+        var activeForeground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"];
+        var inactiveForeground = (System.Windows.Media.Brush)Application.Current.Resources["MutedBrush"];
+
+        foreach (var button in new[] { HomeNavButton, DevicesNavButton, TrafficNavButton, BlacklistNavButton, SettingsNavButton })
+        {
+            button.Background = System.Windows.Media.Brushes.Transparent;
+            button.Foreground = inactiveForeground;
+            button.FontWeight = System.Windows.FontWeights.Normal;
+        }
+
+        active.Background = selectedBackground;
+        active.Foreground = activeForeground;
+        active.FontWeight = System.Windows.FontWeights.SemiBold;
     }
+
+    private void HomeNav_Click(object sender, RoutedEventArgs e) => ShowPage(HomePage);
 
     private void LightThemeToggle_Checked(object sender, RoutedEventArgs e) => SetTheme(false);
     private void DarkThemeToggle_Checked(object sender, RoutedEventArgs e) => SetTheme(true);
