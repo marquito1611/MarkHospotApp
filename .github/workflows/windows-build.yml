@@ -99,5 +99,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
-          $changelog = "Nuevas mejores en estabilidad y corrección de errores"
+          $changelog = "Nuevas mejoras en estabilidad y corrección de errores"
           gh release create $tag "artifacts/MarkHotspot/MarkHotspot.exe" --title $tag --notes $changelog
