@@ -1118,6 +1118,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            _settings.StartWithWindows = previous;
             _changingStartupToggle = true;
             AutoStartToggle.IsChecked = previous;
             _changingStartupToggle = false;
