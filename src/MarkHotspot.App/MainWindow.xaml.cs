@@ -86,7 +86,6 @@ public partial class MainWindow : Window
         _changingTheme = false;
         ApplyTheme(_settings.IsDarkTheme);
         SsidBox.Text = _settings.Ssid;
-        SettingsSsidBox.Text = _settings.Ssid;
         PasswordBox.Password = _settings.Password;
         PasswordVisibleBox.Text = _settings.Password;
         RefreshAdapters();
@@ -369,24 +368,6 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
-    {
-        var ssid = SettingsSsidBox.Text.Trim();
-        if (ssid.Length is < 1 or > 32)
-        {
-            SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres.");
-            return;
-        }
-        _settings.Ssid = ssid;
-        SsidBox.Text = ssid;
-        try
-        {
-            SaveSettings();
-            SetStatus("Nombre de red guardado. Para aplicarlo al hotspot, pulsa Iniciar hotspot heredado.");
-        }
-        catch (Exception ex) { SetStatus("No se pudo guardar la configuración: " + ex.Message); }
-    }
-
     private void LoadSettings()
     {
         try
@@ -471,7 +452,6 @@ public partial class MainWindow : Window
     {
         if (_deviceScanInProgress) return;
         _deviceScanInProgress = true;
-        ScanDevicesButton.IsEnabled = false;
         try
         {
             // Automatic scans must never launch an installer repeatedly.
@@ -537,7 +517,6 @@ public partial class MainWindow : Window
         finally
         {
             _deviceScanInProgress = false;
-            ScanDevicesButton.IsEnabled = true;
         }
     }
 
