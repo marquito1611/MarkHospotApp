@@ -13,7 +13,7 @@ namespace MarkHotspot;
 
 public partial class MainWindow
 {
-    private const string LatestReleaseApiUrl = "https://api.github.com/repos/marquito1611/MarkHospotApp/releases/latest";
+    private const string LatestReleaseApiUrl = "https://api.github.com/repos/marquito1611/MarkHospotApp/releases?per_page=50";
     private static readonly HttpClient UpdateHttpClient = CreateUpdateHttpClient();
     private CancellationTokenSource? _updateCancellation;
     private AvailableUpdate? _availableUpdate;
@@ -72,22 +72,46 @@ public partial class MainWindow
             using var apiResponse = await UpdateHttpClient.GetAsync(LatestReleaseApiUrl, HttpCompletionOption.ResponseHeadersRead);
             apiResponse.EnsureSuccessStatusCode();
             using var releaseDocument = JsonDocument.Parse(await apiResponse.Content.ReadAsStringAsync());
-            var release = releaseDocument.RootElement;
-            var tag = release.TryGetProperty("tag_name", out var tagElement) ? tagElement.GetString() : null;
-            if (string.IsNullOrWhiteSpace(tag))
-                throw new InvalidDataException("GitHub no devolvió una etiqueta de versión válida.");
+            var releases = releaseDocument.RootElement;
+            if (releases.ValueKind != JsonValueKind.Array)
+                throw new InvalidDataException("GitHub devolvió una lista de publicaciones con formato no válido.");
 
-            var versionMatch = Regex.Match(tag, @"^v(\d+)\.(\d+)\.(\d+)-Public_Release$", RegexOptions.IgnoreCase);
-            if (!versionMatch.Success ||
-                !int.TryParse(versionMatch.Groups[1].Value, out var latestMajor) ||
-                !int.TryParse(versionMatch.Groups[2].Value, out var latestMinor) ||
-                !int.TryParse(versionMatch.Groups[3].Value, out var latestPatch))
-                throw new InvalidDataException("La publicación más reciente no tiene el formato esperado (vX.Y.Z-Public_Release).");
-            var latestVersion = new Version(latestMajor, latestMinor, latestPatch);
+            // Do not trust /releases/latest alone: if a malformed or draft release is
+            // marked latest, it can hide valid stable releases. Pick the highest valid
+            // stable Public_Release tag from the release list instead.
+            JsonElement release = default;
+            string? tag = null;
+            var latestVersion = new Version(0, 0, 0);
+            foreach (var candidate in releases.EnumerateArray())
+            {
+                var candidateTag = candidate.TryGetProperty("tag_name", out var candidateTagElement)
+                    ? candidateTagElement.GetString()?.Trim()
+                    : null;
+                if (string.IsNullOrWhiteSpace(candidateTag))
+                    continue;
 
-            if ((release.TryGetProperty("draft", out var draft) && draft.GetBoolean()) ||
-                (release.TryGetProperty("prerelease", out var prerelease) && prerelease.GetBoolean()))
-                throw new InvalidDataException("La publicación encontrada no es una versión estable.");
+                var versionMatch = Regex.Match(candidateTag, @"^v(\d+)\.(\d+)\.(\d+)-Public_Release$", RegexOptions.IgnoreCase);
+                if (!versionMatch.Success ||
+                    !int.TryParse(versionMatch.Groups[1].Value, out var candidateMajor) ||
+                    !int.TryParse(versionMatch.Groups[2].Value, out var candidateMinor) ||
+                    !int.TryParse(versionMatch.Groups[3].Value, out var candidatePatch))
+                    continue;
+
+                if ((candidate.TryGetProperty("draft", out var candidateDraft) && candidateDraft.GetBoolean()) ||
+                    (candidate.TryGetProperty("prerelease", out var candidatePrerelease) && candidatePrerelease.GetBoolean()))
+                    continue;
+
+                var candidateVersion = new Version(candidateMajor, candidateMinor, candidatePatch);
+                if (candidateVersion <= latestVersion)
+                    continue;
+
+                release = candidate;
+                tag = candidateTag;
+                latestVersion = candidateVersion;
+            }
+
+            if (release.ValueKind != JsonValueKind.Object || tag is null)
+                throw new InvalidDataException("No se encontró una publicación estable con formato vX.Y.Z-Public_Release.");
 
             if (latestVersion <= GetComparableInstalledVersion())
             {
