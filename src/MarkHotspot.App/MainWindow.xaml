@@ -103,7 +103,7 @@
                             <TextBlock Text="Nombre de red (SSID)" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/>
                             <TextBox x:Name="SettingsSsidBox" Padding="8" Margin="0,0,0,12" Text="MarkHotspot"/>
                             <TextBlock Text="Contraseña" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/>
-                            <TextBlock Text="Cambia el SSID y la contraseña en el Panel principal y pulsa Iniciar hotspot para guardar y aplicar los cambios." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}"/>
+                            <TextBlock Text="Guarda aquí el nombre de red. Para cambiar la contraseña, usa el campo del Panel principal." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"/><Button Content="Guardar nombre de red" Click="SaveSettingsButton_Click" HorizontalAlignment="Left"/>
                         </StackPanel>
                     </Border>
                 </StackPanel>
