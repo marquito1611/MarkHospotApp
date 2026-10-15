@@ -430,6 +430,10 @@ public partial class MainWindow : Window
                 row.TrafficText = $"↑ {FormatRate(counter.TakeUpload())}   ↓ {FormatRate(counter.TakeDownload())}";
             else
                 row.TrafficText = _captureStarted ? "↑ 0 B/s   ↓ 0 B/s" : "↑ —   ↓ —";
+
+            var limitRow = _trafficLimits.FirstOrDefault(x => x.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase));
+            if (limitRow is not null)
+                limitRow.TrafficText = row.TrafficText;
         }
     }
 
