@@ -43,10 +43,13 @@ public partial class MainWindow : Window
     private bool _deviceScanInProgress;
     private bool _hotspotOperationInProgress;
     private bool _changingStartupToggle;
+    private readonly bool _startMinimized;
 
     public MainWindow()
     {
         InitializeComponent();
+        _startMinimized = Environment.GetCommandLineArgs().Skip(1)
+            .Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         InitializeTrayIcon();
         Closing += MainWindow_Closing;
         StateChanged += MainWindow_StateChanged;
@@ -62,11 +65,10 @@ public partial class MainWindow : Window
         try { ApplyStartupRegistration(_settings.StartWithWindows); }
         catch (Exception ex) { SetStatus("No se pudo aplicar el inicio automático: " + ex.Message); }
         InstalledVersionText.Text = "Versión instalada: " + GetInstalledVersionLabel();
-        Loaded += async (_, _) => await StartModernHotspotOnLaunchAsync();
+        Loaded += MainWindow_Loaded;
         _hotspotStateTimer.Tick += async (_, _) => await RefreshModernHotspotStateAsync();
         _hotspotStateTimer.Start();
         _deviceDiscoveryTimer.Tick += async (_, _) => await ScanDevicesAsync();
-        Loaded += (_, _) => _deviceDiscoveryTimer.Start();
         LoadTrafficLimitSettings();
         _changingTheme = true;
         DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
@@ -95,6 +97,23 @@ public partial class MainWindow : Window
                 _trayIcon = null;
             }
         };
+    }
+
+    private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (_startMinimized)
+        {
+            ShowInTaskbar = false;
+            Hide();
+        }
+        else
+        {
+            ShowInTaskbar = true;
+            WindowState = WindowState.Maximized;
+        }
+
+        _deviceDiscoveryTimer.Start();
+        await StartModernHotspotOnLaunchAsync();
     }
 
     private void InitializeTrayIcon()
@@ -133,6 +152,7 @@ public partial class MainWindow : Window
 
     private void HideToTray()
     {
+        ShowInTaskbar = false;
         Hide();
         if (WindowState == WindowState.Minimized)
             WindowState = WindowState.Normal;
@@ -146,8 +166,9 @@ public partial class MainWindow : Window
 
     private void ShowFromTray()
     {
+        ShowInTaskbar = true;
         Show();
-        WindowState = WindowState.Normal;
+        WindowState = WindowState.Maximized;
         Activate();
     }
 
@@ -1134,7 +1155,7 @@ public partial class MainWindow : Window
         {
             var executable = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
             if (string.IsNullOrWhiteSpace(executable)) throw new InvalidOperationException("No se pudo determinar la ruta del ejecutable.");
-            key.SetValue("MarkHotspot", "\"" + executable + "\"");
+            key.SetValue("MarkHotspot", "\"" + executable + "\" --background");
         }
         else key.DeleteValue("MarkHotspot", throwOnMissingValue: false);
     }
