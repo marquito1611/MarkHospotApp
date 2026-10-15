@@ -42,6 +42,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private bool _deviceScanInProgress;
     private bool _hotspotOperationInProgress;
+    private bool _changingStartupToggle;
 
     public MainWindow()
     {
@@ -58,7 +59,9 @@ public partial class MainWindow : Window
         LoadSettings();
         CurrentSettings = _settings;
         AutoStartToggle.IsChecked = _settings.StartWithWindows;
-        ApplyStartupRegistration(_settings.StartWithWindows);
+        try { ApplyStartupRegistration(_settings.StartWithWindows); }
+        catch (Exception ex) { SetStatus("No se pudo aplicar el inicio automático: " + ex.Message); }
+        InstalledVersionText.Text = "Versión instalada: " + GetInstalledVersionLabel();
         Loaded += async (_, _) => await StartModernHotspotOnLaunchAsync();
         _hotspotStateTimer.Tick += async (_, _) => await RefreshModernHotspotStateAsync();
         _hotspotStateTimer.Start();
@@ -98,6 +101,8 @@ public partial class MainWindow : Window
     {
         var menu = new System.Windows.Forms.ContextMenuStrip();
         menu.Items.Add("Abrir MarkHotspot", null, (_, _) => ShowFromTray());
+        menu.Items.Add("Configuración", null, (_, _) => OpenTrayPage(SettingsPage));
+        menu.Items.Add("Acerca de", null, (_, _) => OpenTrayPage(AboutPage));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("Salir", null, async (_, _) => await ExitApplicationAsync());
 
@@ -242,14 +247,23 @@ public partial class MainWindow : Window
     {
         if (_changingTheme) return;
         _changingTheme = true;
-        if (dark) LightThemeToggle.IsChecked = false;
-        else DarkThemeToggle.IsChecked = false;
-        _settings.IsDarkTheme = dark;
-        ApplyTheme(dark);
-        try { SaveSettings(); }
-        catch (Exception ex) { SetStatus("No se pudo guardar el tema: " + ex.Message); }
-        _changingTheme = false;
+        try
+        {
+            if (dark) LightThemeToggle.IsChecked = false;
+            else DarkThemeToggle.IsChecked = false;
+            _settings.IsDarkTheme = dark;
+            ApplyTheme(dark);
+            SaveSettings();
+            ShowPage(CurrentVisiblePage());
+        }
+        catch (Exception ex) { SetStatus("No se pudo aplicar o guardar el tema: " + ex.Message); }
+        finally { _changingTheme = false; }
     }
+
+    private System.Windows.Controls.StackPanel CurrentVisiblePage() =>
+        HomePage.Visibility == Visibility.Visible ? HomePage :
+        DevicesPage.Visibility == Visibility.Visible ? DevicesPage :
+        SettingsPage.Visibility == Visibility.Visible ? SettingsPage : AboutPage;
 
     private static void ApplyTheme(bool dark)
     {
@@ -258,6 +272,10 @@ public partial class MainWindow : Window
         SetBrushColor("AccentBrush", dark ? "#3B82F6" : "#2563EB");
         SetBrushColor("MutedBrush", dark ? "#9AA4B2" : "#5B6472");
         SetBrushColor("MainTextBrush", dark ? "#F4F6FA" : "#172033");
+        SetBrushColor("SelectionBrush", dark ? "#2A3B59" : "#DBEAFE");
+        SetBrushColor("HoverBrush", dark ? "#263244" : "#E8EEF7");
+        SetBrushColor("ScrollTrackBrush", dark ? "#17191C" : "#E8EDF4");
+        SetBrushColor("ScrollThumbBrush", dark ? "#666B72" : "#A5AFBD");
     }
 
     private static void SetBrushColor(string key, string hex)
@@ -271,6 +289,12 @@ public partial class MainWindow : Window
     private void DevicesNav_Click(object sender, RoutedEventArgs e) => ShowPage(DevicesPage);
     private void SettingsNav_Click(object sender, RoutedEventArgs e) => ShowPage(SettingsPage);
     private void AboutNav_Click(object sender, RoutedEventArgs e) => ShowPage(AboutPage);
+
+    private void OpenTrayPage(System.Windows.Controls.StackPanel page)
+    {
+        ShowFromTray();
+        ShowPage(page);
+    }
 
     private void TogglePasswordButton_Click(object sender, RoutedEventArgs e)
     {
@@ -1079,20 +1103,26 @@ public partial class MainWindow : Window
         }
     }
 
-    private void AutoStartToggle_Checked(object sender, RoutedEventArgs e)
-    {
-        if (_settings is null) return;
-        _settings.StartWithWindows = true;
-        try { ApplyStartupRegistration(true); SaveSettings(); }
-        catch (Exception ex) { SetStatus("No se pudo activar el inicio automático: " + ex.Message); }
-    }
+    private void AutoStartToggle_Checked(object sender, RoutedEventArgs e) => SetStartupPreference(true);
+    private void AutoStartToggle_Unchecked(object sender, RoutedEventArgs e) => SetStartupPreference(false);
 
-    private void AutoStartToggle_Unchecked(object sender, RoutedEventArgs e)
+    private void SetStartupPreference(bool enabled)
     {
-        if (_settings is null) return;
-        _settings.StartWithWindows = false;
-        try { ApplyStartupRegistration(false); SaveSettings(); }
-        catch (Exception ex) { SetStatus("No se pudo desactivar el inicio automático: " + ex.Message); }
+        if (_changingStartupToggle) return;
+        var previous = _settings.StartWithWindows;
+        try
+        {
+            ApplyStartupRegistration(enabled);
+            _settings.StartWithWindows = enabled;
+            SaveSettings();
+        }
+        catch (Exception ex)
+        {
+            _changingStartupToggle = true;
+            AutoStartToggle.IsChecked = previous;
+            _changingStartupToggle = false;
+            SetStatus("No se pudo " + (enabled ? "activar" : "desactivar") + " el inicio automático: " + ex.Message);
+        }
     }
 
     private static void ApplyStartupRegistration(bool enabled)
