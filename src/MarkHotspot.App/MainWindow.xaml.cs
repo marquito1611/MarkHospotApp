@@ -29,7 +29,6 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private ICaptureDevice? _captureDevice;
     private bool _captureStarted;
-    private readonly ObservableCollection<BlockedDeviceRow> _blockedDevices = new();
     private readonly string _dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MarkHotspot");
     private readonly string _settingsPath;
     private AppSettings _settings = new();
@@ -50,8 +49,8 @@ public partial class MainWindow : Window
         TrafficLimitsList.ItemsSource = _trafficLimits;
         _trafficTimer.Tick += (_, _) => UpdateTrafficRates();
         _trafficTimer.Start();
-        BlacklistList.ItemsSource = _blockedDevices;
         LoadSettings();
+        CurrentSettings = _settings;
         LoadTrafficLimitSettings();
         _changingTheme = true;
         DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
@@ -63,7 +62,6 @@ public partial class MainWindow : Window
         PasswordBox.Password = _settings.Password;
         PasswordVisibleBox.Text = _settings.Password;
         RefreshAdapters();
-        LoadBlacklistRows();
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
         Closed += (_, _) =>
@@ -322,7 +320,6 @@ public partial class MainWindow : Window
     private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshAdapters();
     private async void ScanDevicesButton_Click(object sender, RoutedEventArgs e) => await ScanDevicesAsync();
     private async void AddToBlacklistButton_Click(object sender, RoutedEventArgs e) => await AddSelectedDeviceToBlacklistAsync();
-    private async void RemoveFromBlacklistButton_Click(object sender, RoutedEventArgs e) => await RemoveSelectedDeviceFromBlacklistAsync();
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
@@ -774,47 +771,53 @@ public partial class MainWindow : Window
         catch (Exception ex) { SetStatus("No se pudieron guardar los límites: " + ex.Message); }
     }
 
+    private static AppSettings? CurrentSettings;
+    private static bool IsBlockedDevice(string mac, string ip) =>
+        CurrentSettings?.Blacklist.Any(b =>
+            (!string.IsNullOrWhiteSpace(mac) && b.Mac.Equals(mac, StringComparison.OrdinalIgnoreCase)) ||
+            (!string.IsNullOrWhiteSpace(ip) && b.Ip.Equals(ip, StringComparison.OrdinalIgnoreCase))) == true;
+
+    private void DevicesList_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e) => UpdateBlockButton();
+    private void UpdateBlockButton()
+    {
+        if (AddToBlacklistButton is null) return;
+        var selected = DevicesList.SelectedItem as DeviceRow;
+        AddToBlacklistButton.IsEnabled = selected is not null;
+        AddToBlacklistButton.Content = selected is not null && IsBlockedDevice(selected.Mac, selected.Ip) ? "Desbloquear dispositivo" : "Bloquear dispositivo";
+    }
+
     private async Task AddSelectedDeviceToBlacklistAsync()
     {
         if (DevicesList.SelectedItem is not DeviceRow selected) { SetStatus("Selecciona primero un dispositivo detectado."); return; }
+        var safeName = "MarkHotspot-Block-" + selected.Ip.Replace('.', '-');
+        if (IsBlockedDevice(selected.Mac, selected.Ip))
+        {
+            var previous = _settings.Blacklist.Where(b => b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase))).ToList();
+            _settings.Blacklist.RemoveAll(b => b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase)));
+            try { SaveSettings(); }
+            catch (Exception ex) { _settings.Blacklist.AddRange(previous); SetStatus("No se pudo guardar el desbloqueo: " + ex.Message); return; }
+            await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-In\"");
+            await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-Out\"");
+            foreach (var row in _devices) row.RefreshBlockedState();
+            UpdateBlockButton();
+            SetStatus($"Dispositivo {selected.Ip} desbloqueado. Las reglas locales de Firewall no garantizan filtrar el tráfico reenviado del hotspot.");
+            return;
+        }
         if (!IPAddress.TryParse(selected.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
         { SetStatus("La dirección IP seleccionada no es válida."); return; }
-        if (_settings.Blacklist.Any(b => b.Ip == selected.Ip)) { SetStatus("Ese dispositivo ya está en la lista negra."); return; }
-
         var entry = new BlockedDevice { Ip = selected.Ip, Mac = selected.Mac, AddedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm") };
         _settings.Blacklist.Add(entry);
         try { SaveSettings(); }
-        catch (Exception ex) { _settings.Blacklist.Remove(entry); SetStatus("No se pudo guardar la lista negra: " + ex.Message); return; }
-
-        var safeName = "MarkHotspot-Block-" + selected.Ip.Replace('.', '-');
+        catch (Exception ex) { _settings.Blacklist.Remove(entry); SetStatus("No se pudo guardar el bloqueo: " + ex.Message); return; }
         var inbound = await RunNetshAsync($"advfirewall firewall add rule name=\"{safeName}-In\" dir=in action=block remoteip={selected.Ip} enable=yes");
         var outbound = await RunNetshAsync($"advfirewall firewall add rule name=\"{safeName}-Out\" dir=out action=block remoteip={selected.Ip} enable=yes");
-        LoadBlacklistRows();
+        foreach (var row in _devices) row.RefreshBlockedState();
+        UpdateBlockButton();
         SetStatus(inbound.ExitCode == 0 && outbound.ExitCode == 0
-            ? $"Añadido {selected.Ip} a la lista negra y creadas reglas de Firewall locales. Importante: estas reglas no garantizan bloquear tráfico reenviado del hotspot."
-            : $"Guardado {selected.Ip} en la lista negra, pero falló alguna regla de Firewall. Ejecuta como administrador. {Short(inbound.Output + " " + outbound.Output)}");
-        await ScanDevicesAsync();
-    }
-
-    private async Task RemoveSelectedDeviceFromBlacklistAsync()
-    {
-        if (BlacklistList.SelectedItem is not BlockedDeviceRow selected) { SetStatus("Selecciona un dispositivo de la lista negra."); return; }
-        _settings.Blacklist.RemoveAll(b => b.Ip == selected.Ip);
-        try { SaveSettings(); }
-        catch (Exception ex) { SetStatus("No se pudo guardar el cambio: " + ex.Message); return; }
-        var safeName = "MarkHotspot-Block-" + selected.Ip.Replace('.', '-');
-        await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-In\"");
-        await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-Out\"");
-        LoadBlacklistRows();
-        SetStatus($"Quitado {selected.Ip} de la lista negra y eliminadas las reglas locales asociadas.");
-    }
-
-    private void LoadBlacklistRows()
-    {
-        _blockedDevices.Clear();
-        foreach (var b in _settings.Blacklist.OrderBy(b => b.Ip))
-            _blockedDevices.Add(new BlockedDeviceRow(b.Ip, string.IsNullOrWhiteSpace(b.Mac) ? "MAC desconocida" : b.Mac, b.AddedAt));
-        if (BlacklistCountText is not null) BlacklistCountText.Text = _blockedDevices.Count.ToString();
+            ? $"Dispositivo {selected.Ip} marcado como bloqueado. Las reglas locales no garantizan filtrar el tráfico reenviado del hotspot."
+            : $"Se guardó el bloqueo de {selected.Ip}, pero falló alguna regla de Firewall. Ejecuta como administrador.");
     }
 
     private async Task<(int ExitCode, string Output)> RunNetshAsync(string arguments) =>
@@ -878,7 +881,9 @@ public partial class MainWindow : Window
         public string Mac { get; }
         public string Name { get => _name; set { _name = value; OnPropertyChanged(); OnPropertyChanged(nameof(DeviceIcon)); } }
         public string DeviceIcon => DetectDeviceIcon(Name);
-        public string State { get => _state; set { _state = value; OnPropertyChanged(); } }
+        public string State { get => _state; set { _state = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayState)); } }
+        public string DisplayState => MainWindow.IsBlockedDevice(Mac, Ip) ? "Bloqueado" : State;
+        public void RefreshBlockedState() => OnPropertyChanged(nameof(DisplayState));
         public string TrafficText { get => _trafficText; set { _trafficText = value; OnPropertyChanged(); } }
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
