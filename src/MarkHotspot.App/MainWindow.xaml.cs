@@ -9,6 +9,8 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
@@ -48,6 +50,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        SourceInitialized += (_, _) => ApplyNativeTitleBarTheme(_settings.IsDarkTheme);
         _startMinimized = Environment.GetCommandLineArgs().Skip(1)
             .Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
         InitializeTrayIcon();
@@ -274,6 +277,7 @@ public partial class MainWindow : Window
             else DarkThemeToggle.IsChecked = false;
             _settings.IsDarkTheme = dark;
             ApplyTheme(dark);
+            ApplyNativeTitleBarTheme(dark);
             SaveSettings();
             ShowPage(CurrentVisiblePage());
         }
@@ -285,6 +289,25 @@ public partial class MainWindow : Window
         HomePage.Visibility == Visibility.Visible ? HomePage :
         DevicesPage.Visibility == Visibility.Visible ? DevicesPage :
         SettingsPage.Visibility == Visibility.Visible ? SettingsPage : AboutPage;
+
+    [DllImport("dwmapi.dll", PreserveSig = true)]
+    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int valueSize);
+
+    private void ApplyNativeTitleBarTheme(bool dark)
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd == IntPtr.Zero) return;
+            var enabled = dark ? 1 : 0;
+            // Windows 11 uses attribute 20; attribute 19 is the Windows 10 fallback.
+            var result = DwmSetWindowAttribute(hwnd, 20, ref enabled, sizeof(int));
+            if (result != 0)
+                DwmSetWindowAttribute(hwnd, 19, ref enabled, sizeof(int));
+        }
+        catch (DllNotFoundException) { }
+        catch (EntryPointNotFoundException) { }
+    }
 
     private static void ApplyTheme(bool dark)
     {
