@@ -65,7 +65,7 @@
                         <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="150" MaxHeight="220">
                             <ListView.View><GridView><GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="230"/><GridViewColumn Header="Tipo" DisplayMemberBinding="{Binding Type}" Width="120"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding Status}" Width="100"/><GridViewColumn Header="Velocidad" DisplayMemberBinding="{Binding Speed}" Width="110"/></GridView></ListView.View>
                         </ListView>
-                        <TextBlock Text="El estado Bloqueado se muestra junto al dispositivo seleccionado. El bloqueo del tráfico reenviado debe confirmarse con el motor de filtrado del sistema; las reglas estándar de Firewall por sí solas no garantizan ese bloqueo." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                        <TextBlock Text="El bloqueo utiliza Windows Filtering Platform para descartar paquetes IPv4 entrantes del cliente en la interfaz del hotspot. El estado Bloqueado solo se guarda si Windows acepta el filtro." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
                     </StackPanel>
                 </Border>
 
