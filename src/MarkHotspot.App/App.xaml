@@ -5,13 +5,13 @@
     <Application.Resources>
         <SolidColorBrush x:Key="BackgroundBrush" Color="#101319"/>
         <SolidColorBrush x:Key="PanelBrush" Color="#191E27"/>
-        <SolidColorBrush x:Key="AccentBrush" Color="#F4C430"/>
+        <SolidColorBrush x:Key="AccentBrush" Color="#3B82F6"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#9AA4B2"/>
         <SolidColorBrush x:Key="MainTextBrush" Color="#F4F6FA"/>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="14,9"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
-            <Setter Property="Foreground" Value="#101319"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
