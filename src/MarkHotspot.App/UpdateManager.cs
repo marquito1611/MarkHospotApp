@@ -275,7 +275,7 @@ public partial class MainWindow
         if (progress.Total > 0 && progress.BytesPerSecond > 0)
         {
             var remainingSeconds = Math.Max(0, (progress.Total - progress.Downloaded) / progress.BytesPerSecond);
-            UpdateRemainingText.Text = "Restante: " + TimeSpan.FromSeconds(remainingSeconds).ToString("c");
+            UpdateRemainingText.Text = "Restante: " + TimeSpan.FromSeconds(remainingSeconds).ToString(@"hh\:mm\:ss");
         }
         else UpdateRemainingText.Text = "Restante: calculando…";
     }
