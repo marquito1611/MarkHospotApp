@@ -123,8 +123,6 @@
                             </Grid>
                         </StackPanel>
                     </Border>
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </Grid>
         </ScrollViewer>
