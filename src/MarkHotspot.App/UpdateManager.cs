@@ -77,7 +77,7 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(tag))
                 throw new InvalidDataException("GitHub no devolvió una etiqueta de versión válida.");
 
-            var versionMatch = Regex.Match(tag, @"^v(\\d+)\\.(\\d+)\\.(\\d+)-Public_Release$", RegexOptions.IgnoreCase);
+            var versionMatch = Regex.Match(tag, @"^v(\d+)\.(\d+)\.(\d+)-Public_Release$", RegexOptions.IgnoreCase);
             if (!versionMatch.Success ||
                 !int.TryParse(versionMatch.Groups[1].Value, out var latestMajor) ||
                 !int.TryParse(versionMatch.Groups[2].Value, out var latestMinor) ||
