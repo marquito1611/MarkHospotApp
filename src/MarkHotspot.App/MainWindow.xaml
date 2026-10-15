@@ -52,22 +52,19 @@
                     </StackPanel>
                 </Border>
                 <Grid Margin="0,0,0,16">
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
-                        <StackPanel><TextBlock Text="ADAPTADORES DE RED" FontSize="11" Foreground="{DynamicResource MutedBrush}"/><TextBlock x:Name="AdapterCountText" Text="—" FontSize="30" FontWeight="Bold" Margin="0,8,0,0"/><TextBlock Text="Interfaces detectadas en Windows" Foreground="{DynamicResource MutedBrush}" FontSize="12"/></StackPanel>
-                    </Border>
-                    <Border Grid.Column="2" Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="1.05*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="0.95*"/></Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
                         <StackPanel><TextBlock Text="CONFIGURACIÓN WI-FI" FontSize="11" Foreground="{DynamicResource MutedBrush}"/><TextBlock Text="SSID y contraseña" FontSize="19" FontWeight="Bold" Margin="0,8,0,12"/><TextBlock Text="Nombre de red" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="SsidBox" Text="MarkHotspot" Padding="8" Margin="0,0,0,10"/><TextBlock Text="Contraseña (8–63 caracteres)" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/><Grid><PasswordBox x:Name="PasswordBox" Password="ChangeMe123" Padding="8" Margin="0,0,36,0"/><TextBox x:Name="PasswordVisibleBox" Text="ChangeMe123" Padding="8" Margin="0,0,36,0" Visibility="Collapsed"/><Button x:Name="TogglePasswordButton" Width="32" Height="30" Padding="0" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0" ToolTip="Mostrar u ocultar contraseña" Click="TogglePasswordButton_Click"><Canvas Width="20" Height="20"><Path Data="M 1,10 C 4,4 8,1.5 10,1.5 C 14,1.5 18,4 21,10 C 18,16 14,18.5 10,18.5 C 6,18.5 3,15.5 1,10 Z" Stroke="{DynamicResource MainTextBrush}" StrokeThickness="1.7" Fill="Transparent" Stretch="Fill"/><Ellipse Canvas.Left="6.5" Canvas.Top="6.5" Width="7" Height="7" Stroke="{DynamicResource MainTextBrush}" StrokeThickness="1.7" Fill="Transparent"/><Path x:Name="PasswordEyeSlashPath" Data="M 2,2 L 18,18" Stroke="{DynamicResource MainTextBrush}" StrokeThickness="2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Visibility="Collapsed"/></Canvas></Button></Grid></StackPanel>
                     </Border>
+                    <Border Grid.Column="2" Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="18">
+                        <StackPanel><TextBlock Text="Interfaces de red" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                            <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource MainTextBrush}" MinHeight="150" MaxHeight="220">
+                                <ListView.View><GridView><GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="145"/><GridViewColumn Header="Tipo" DisplayMemberBinding="{Binding Type}" Width="65"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding Status}" Width="65"/><GridViewColumn Header="Velocidad" DisplayMemberBinding="{Binding Speed}" Width="75"/></GridView></ListView.View>
+                            </ListView>
+                            <TextBlock Text="El bloqueo utiliza Windows Filtering Platform para descartar paquetes IPv4 entrantes del cliente en la interfaz del hotspot. El estado Bloqueado solo se guarda si Windows acepta el filtro." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,12,0,0" FontSize="11"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
-                <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20">
-                    <StackPanel><TextBlock Text="Interfaces de red" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource MainTextBrush}" MinHeight="150" MaxHeight="220">
-                            <ListView.View><GridView><GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="230"/><GridViewColumn Header="Tipo" DisplayMemberBinding="{Binding Type}" Width="120"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding Status}" Width="100"/><GridViewColumn Header="Velocidad" DisplayMemberBinding="{Binding Speed}" Width="110"/></GridView></ListView.View>
-                        </ListView>
-                        <TextBlock Text="El bloqueo utiliza Windows Filtering Platform para descartar paquetes IPv4 entrantes del cliente en la interfaz del hotspot. El estado Bloqueado solo se guarda si Windows acepta el filtro." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
-                    </StackPanel>
-                </Border>
 
                 </StackPanel>
                 <StackPanel x:Name="DevicesPage" Visibility="Collapsed">
@@ -75,7 +72,7 @@
                     <TextBlock Text="Solo clientes de la red local del hotspot" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
                     <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
                         <StackPanel>
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Identificación por MAC, estado de conexión y tráfico por dispositivo en tiempo real." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/><TextBlock x:Name="DeviceScanStatusText" Text="La detección automática se actualizará cada 5 segundos." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="11" Margin="0,5,0,0"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="DevicesCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/><Button x:Name="ScanDevicesButton" Content="Buscar dispositivos" Click="ScanDevicesButton_Click"/></StackPanel></Grid>
+                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Identificación por MAC, estado de conexión y tráfico por dispositivo en tiempo real." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/><TextBlock x:Name="DeviceScanStatusText" Text="La detección automática se actualizará cada 5 segundos." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" FontSize="11" Margin="0,5,0,0"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="DevicesCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center"/></StackPanel></Grid>
                         <ListView x:Name="DevicesList" Background="Transparent" BorderThickness="0" Foreground="{DynamicResource MainTextBrush}" MinHeight="150" MaxHeight="240" SelectionChanged="DevicesList_SelectionChanged">
                             <ListView.View><GridView><GridViewColumn Header="Dispositivo" Width="230"><GridViewColumn.CellTemplate><DataTemplate><StackPanel Orientation="Horizontal"><TextBlock Text="{Binding DeviceIcon}" FontSize="17" Margin="0,0,10,0" VerticalAlignment="Center"/><TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold"/></StackPanel></DataTemplate></GridViewColumn.CellTemplate></GridViewColumn><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding DisplayState}" Width="125"/><GridViewColumn Header="Tráfico" DisplayMemberBinding="{Binding TrafficText}" Width="180"/></GridView></ListView.View>
                         </ListView>
@@ -164,14 +161,6 @@
                 <StackPanel x:Name="SettingsPage" Visibility="Collapsed">
                     <TextBlock Text="Configuración" FontSize="28" FontWeight="Bold"/>
                     <TextBlock Text="Ajustes del punto de acceso" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="22">
-                        <StackPanel>
-                            <TextBlock Text="Nombre de red (SSID)" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                            <TextBox x:Name="SettingsSsidBox" Padding="8" Margin="0,0,0,12" Text="MarkHotspot"/>
-                            <TextBlock Text="Contraseña" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,5"/>
-                            <TextBlock Text="Guarda aquí el nombre de red. Para cambiar la contraseña, usa el campo del Panel principal." TextWrapping="Wrap" Foreground="{DynamicResource MutedBrush}" Margin="0,0,0,12"/><Button Content="Guardar nombre de red" Click="SaveSettingsButton_Click" HorizontalAlignment="Left"/>
-                    </StackPanel>
-                    </Border>
                     <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,16,0,0">
                         <StackPanel>
                             <TextBlock Text="Inicio automático" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
