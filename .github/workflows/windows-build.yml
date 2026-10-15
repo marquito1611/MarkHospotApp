@@ -17,6 +17,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: markhotspot-public-release-main
+  cancel-in-progress: true
+
 jobs:
   build:
     if: github.event_name != 'pull_request'
@@ -27,7 +31,22 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Skip superseded commits
+        id: guard
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $mainSha = gh api "repos/$env:GITHUB_REPOSITORY/commits/main" --jq .sha
+          if ($mainSha -ne "${{ github.sha }}") {
+            "current=false" >> $env:GITHUB_OUTPUT
+            Write-Host "Este commit fue superado por uno más reciente; no se publicará una versión duplicada."
+          } else {
+            "current=true" >> $env:GITHUB_OUTPUT
+          }
+
       - name: Calculate next public version
+        if: steps.guard.outputs.current == 'true'
         id: version
         shell: pwsh
         env:
@@ -47,20 +66,25 @@ jobs:
           "Versión calculada: $tag"
 
       - name: Setup .NET
+        if: steps.guard.outputs.current == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
       - name: Restore
+        if: steps.guard.outputs.current == 'true'
         run: dotnet restore MarkHotspot.sln
 
       - name: Build Release x64
+        if: steps.guard.outputs.current == 'true'
         run: dotnet build MarkHotspot.sln --configuration Release --no-restore -p:Platform=x64 -p:Version=${{ steps.version.outputs.version }}
 
       - name: Publish self-contained x64
+        if: steps.guard.outputs.current == 'true'
         run: dotnet publish src/MarkHotspot.App/MarkHotspot.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=${{ steps.version.outputs.version }} --output artifacts/MarkHotspot
 
       - name: Upload build artifact
+        if: steps.guard.outputs.current == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: MarkHotspot-win-x64
@@ -69,6 +93,7 @@ jobs:
           retention-days: 14
 
       - name: Publish GitHub Release with changelog
+        if: steps.guard.outputs.current == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
