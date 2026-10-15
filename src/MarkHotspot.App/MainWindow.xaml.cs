@@ -1,6 +1,8 @@
 using System.IO;
 using System.Diagnostics;
 using Microsoft.Win32;
+using Windows.Networking.Connectivity;
+using Windows.Networking.NetworkOperators;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -36,6 +38,8 @@ public partial class MainWindow : Window
     private System.Windows.Forms.NotifyIcon? _trayIcon;
     private bool _allowExit;
     private bool _exitInProgress;
+    private readonly DispatcherTimer _hotspotStateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private bool _hotspotOperationInProgress;
 
     public MainWindow()
     {
@@ -51,6 +55,11 @@ public partial class MainWindow : Window
         _trafficTimer.Start();
         LoadSettings();
         CurrentSettings = _settings;
+        AutoStartToggle.IsChecked = _settings.StartWithWindows;
+        ApplyStartupRegistration(_settings.StartWithWindows);
+        Loaded += async (_, _) => await StartModernHotspotOnLaunchAsync();
+        _hotspotStateTimer.Tick += async (_, _) => await RefreshModernHotspotStateAsync();
+        _hotspotStateTimer.Start();
         LoadTrafficLimitSettings();
         _changingTheme = true;
         DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
@@ -69,6 +78,7 @@ public partial class MainWindow : Window
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
             _trafficTimer.Stop();
+            _hotspotStateTimer.Stop();
             StopTrafficCapture();
             if (_trayIcon is not null)
             {
@@ -137,8 +147,8 @@ public partial class MainWindow : Window
         _exitInProgress = true;
         try
         {
-            var result = await RunNetshAsync("wlan stop hostednetwork");
-            if (result.ExitCode != 0)
+            var result = await StopModernHotspotAsync();
+            if (!result.Success)
             {
                 var answer = System.Windows.MessageBox.Show(
                     "Windows no confirmó que el hotspot se haya detenido. ¿Quieres salir de MarkHotspot de todos modos?",
@@ -334,16 +344,16 @@ public partial class MainWindow : Window
             _settings.Ssid = ssid;
             _settings.Password = password;
             SaveSettings();
-            SetStatus("Configurando Hosted Network heredado de Windows…");
-            var config = await RunNetshAsync($"wlan set hostednetwork mode=allow ssid=\"{ssid}\" key=\"{password}\" keyUsage=persistent");
-            if (config.ExitCode != 0 || config.Output.Contains("not supported", StringComparison.OrdinalIgnoreCase) ||
-                config.Output.Contains("no se puede", StringComparison.OrdinalIgnoreCase))
+            HotspotStateText.Text = "Activando Hotspot…";
+            HotspotDetailText.Text = "Solicitando a Windows que active el Mobile Hotspot moderno…";
+            var result = await StartModernHotspotAsync();
+            if (!result.Success)
             {
-                SetStatus("Windows rechazó Hosted Network. Muchos controladores modernos no admiten esta API heredada. " + Short(config.Output));
+                HotspotStateText.Text = "Hotspot Detenido";
+                HotspotDetailText.Text = result.Message;
                 return;
             }
-            var start = await RunNetshAsync("wlan start hostednetwork");
-            SetStatus(start.ExitCode == 0 ? "Windows aceptó la orden de inicio. La detección de clientes depende de la tabla de vecinos y puede no mostrar todos los dispositivos." : "No se pudo iniciar el punto de acceso: " + Short(start.Output));
+            await ConfirmHotspotStateAsync();
             await RefreshAdaptersAsync();
             await ScanDevicesAsync();
         }
@@ -356,8 +366,11 @@ public partial class MainWindow : Window
         StopButton.IsEnabled = false;
         try
         {
-            var result = await RunNetshAsync("wlan stop hostednetwork");
-            SetStatus(result.ExitCode == 0 ? "Windows aceptó la orden para detener Hosted Network." : "No se pudo detener Hosted Network: " + Short(result.Output));
+            HotspotStateText.Text = "Hotspot Deteniendo…";
+            var result = await StopModernHotspotAsync();
+            HotspotStateText.Text = "Hotspot Detenido";
+            HotspotDetailText.Text = result.Message;
+            await RefreshModernHotspotStateAsync();
         }
         catch (Exception ex) { SetStatus("Error al detener: " + ex.Message); }
         finally { StopButton.IsEnabled = true; }
@@ -861,11 +874,160 @@ public partial class MainWindow : Window
             _adapters.Clear();
             foreach (var row in rows) _adapters.Add(row);
             AdapterCountText.Text = rows.Count.ToString();
-            HotspotStateText.Text = "Estado no confirmado";
-            HotspotDetailText.Text = "La lista de interfaces es real. El estado del Mobile Hotspot moderno no se confirma con esta API.";
         }
         catch (Exception ex) { SetStatus("Error de diagnóstico de red: " + ex.Message); }
         return Task.CompletedTask;
+    }
+
+    private async Task StartModernHotspotOnLaunchAsync()
+    {
+        HotspotStateText.Text = "Activando Hotspot…";
+        HotspotDetailText.Text = "Comprobando el estado del Mobile Hotspot de Windows…";
+        var state = await GetModernHotspotStateAsync();
+        if (state == TetheringOperationalState.On)
+        {
+            HotspotStateText.Text = "Hotspot Activo";
+            HotspotDetailText.Text = "Windows confirma que el Mobile Hotspot está activo.";
+            return;
+        }
+
+        HotspotStateText.Text = "Activando Hotspot…";
+        var result = await StartModernHotspotAsync();
+        HotspotDetailText.Text = result.Message;
+        if (result.Success) await ConfirmHotspotStateAsync();
+        else HotspotStateText.Text = "Hotspot Detenido";
+    }
+
+    private async Task<(bool Success, string Message)> StartModernHotspotAsync()
+    {
+        if (_hotspotOperationInProgress) return (false, "Ya hay una operación del hotspot en curso.");
+        _hotspotOperationInProgress = true;
+        try
+        {
+            HotspotStateText.Text = "Activando Hotspot…";
+            var profile = NetworkInformation.GetInternetConnectionProfile();
+            if (profile is null)
+                return (false, "Windows no tiene un perfil de conexión a Internet disponible. Conecta primero la PC a Internet.");
+
+            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
+            if (manager.TetheringOperationalState == TetheringOperationalState.On)
+                return (true, "Windows confirma que el Mobile Hotspot está activo.");
+
+            var result = await manager.StartTetheringAsync();
+            if (result.Status != TetheringOperationStatus.Success)
+                return (false, "Windows no pudo activar el Mobile Hotspot: " + result.AdditionalErrorMessage);
+
+            var confirmed = await WaitForHotspotStateAsync(TetheringOperationalState.On, TimeSpan.FromSeconds(25));
+            return confirmed
+                ? (true, "Windows confirma que el Mobile Hotspot está activo.")
+                : (false, "Windows aceptó la solicitud, pero no confirmó que el Mobile Hotspot esté activo.");
+        }
+        catch (Exception ex)
+        {
+            return (false, "No se pudo consultar o activar el Mobile Hotspot moderno de Windows: " + ex.Message);
+        }
+        finally { _hotspotOperationInProgress = false; }
+    }
+
+    private async Task<(bool Success, string Message)> StopModernHotspotAsync()
+    {
+        if (_hotspotOperationInProgress) return (false, "Ya hay una operación del hotspot en curso.");
+        _hotspotOperationInProgress = true;
+        try
+        {
+            var profile = NetworkInformation.GetInternetConnectionProfile();
+            if (profile is null) return (false, "Windows no expone un perfil de conexión para controlar el Mobile Hotspot.");
+            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
+            if (manager.TetheringOperationalState == TetheringOperationalState.Off)
+                return (true, "Windows confirma que el Mobile Hotspot está detenido.");
+
+            var result = await manager.StopTetheringAsync();
+            if (result.Status != TetheringOperationStatus.Success)
+                return (false, "Windows no pudo detener el Mobile Hotspot: " + result.AdditionalErrorMessage);
+            var confirmed = await WaitForHotspotStateAsync(TetheringOperationalState.Off, TimeSpan.FromSeconds(15));
+            return confirmed
+                ? (true, "Windows confirma que el Mobile Hotspot está detenido.")
+                : (false, "Windows aceptó la orden, pero no confirmó que el Mobile Hotspot se haya detenido.");
+        }
+        catch (Exception ex) { return (false, "Error al detener el Mobile Hotspot: " + ex.Message); }
+        finally { _hotspotOperationInProgress = false; }
+    }
+
+    private Task<TetheringOperationalState?> GetModernHotspotStateAsync()
+    {
+        try
+        {
+            var profile = NetworkInformation.GetInternetConnectionProfile();
+            if (profile is null) return Task.FromResult<TetheringOperationalState?>(null);
+            return Task.FromResult<TetheringOperationalState?>(
+                NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile).TetheringOperationalState);
+        }
+        catch { return Task.FromResult<TetheringOperationalState?>(null); }
+    }
+
+    private async Task<bool> WaitForHotspotStateAsync(TetheringOperationalState expected, TimeSpan timeout)
+    {
+        var until = DateTime.UtcNow + timeout;
+        do
+        {
+            if (await GetModernHotspotStateAsync() == expected) return true;
+            await Task.Delay(750);
+        } while (DateTime.UtcNow < until);
+        return false;
+    }
+
+    private async Task ConfirmHotspotStateAsync()
+    {
+        var confirmed = await WaitForHotspotStateAsync(TetheringOperationalState.On, TimeSpan.FromSeconds(25));
+        HotspotStateText.Text = confirmed ? "Hotspot Activo" : "Hotspot Detenido";
+        HotspotDetailText.Text = confirmed
+            ? "Windows confirma que el Mobile Hotspot está activo."
+            : "No se confirmó el estado activo del Mobile Hotspot. Comprueba la configuración de Windows.";
+    }
+
+    private async Task RefreshModernHotspotStateAsync()
+    {
+        if (_hotspotOperationInProgress) return;
+        var state = await GetModernHotspotStateAsync();
+        if (state == TetheringOperationalState.On)
+        {
+            HotspotStateText.Text = "Hotspot Activo";
+            HotspotDetailText.Text = "Windows confirma que el Mobile Hotspot está activo.";
+        }
+        else if (state == TetheringOperationalState.Off)
+        {
+            HotspotStateText.Text = "Hotspot Detenido";
+            HotspotDetailText.Text = "Windows confirma que el Mobile Hotspot está detenido.";
+        }
+    }
+
+    private void AutoStartToggle_Checked(object sender, RoutedEventArgs e)
+    {
+        if (_settings is null) return;
+        _settings.StartWithWindows = true;
+        try { ApplyStartupRegistration(true); SaveSettings(); }
+        catch (Exception ex) { SetStatus("No se pudo activar el inicio automático: " + ex.Message); }
+    }
+
+    private void AutoStartToggle_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (_settings is null) return;
+        _settings.StartWithWindows = false;
+        try { ApplyStartupRegistration(false); SaveSettings(); }
+        catch (Exception ex) { SetStatus("No se pudo desactivar el inicio automático: " + ex.Message); }
+    }
+
+    private static void ApplyStartupRegistration(bool enabled)
+    {
+        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)
+            ?? Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+        if (enabled)
+        {
+            var executable = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+            if (string.IsNullOrWhiteSpace(executable)) throw new InvalidOperationException("No se pudo determinar la ruta del ejecutable.");
+            key.SetValue("MarkHotspot", "\"" + executable + "\"");
+        }
+        else key.DeleteValue("MarkHotspot", throwOnMissingValue: false);
     }
 
     private void SetStatus(string message) => HotspotDetailText.Text = message;
@@ -918,6 +1080,7 @@ public partial class MainWindow : Window
     private sealed class AppSettings
     {
         public bool IsDarkTheme { get; set; } = true;
+        public bool StartWithWindows { get; set; } = true;
         public string Ssid { get; set; } = "MarkHotspot";
         public string Password { get; set; } = "ChangeMe123";
         public List<BlockedDevice> Blacklist { get; set; } = new();
