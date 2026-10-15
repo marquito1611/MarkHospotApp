@@ -402,6 +402,8 @@ public partial class MainWindow : Window
     private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshAdapters();
     private async void ScanDevicesButton_Click(object sender, RoutedEventArgs e) => await ScanDevicesAsync();
     private async void BlockDeviceButton_Click(object sender, RoutedEventArgs e) => await ToggleDeviceBlockAsync();
+    private void RenameDeviceButton_Click(object sender, RoutedEventArgs e) => RenameSelectedDevice();
+    private void LimitDeviceTrafficButton_Click(object sender, RoutedEventArgs e) => ConfigureSelectedDeviceTraffic();
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
     {
@@ -492,6 +494,7 @@ public partial class MainWindow : Window
                 if (!_devicesByMac.TryGetValue(mac, out var row))
                 {
                     var name = await ResolveDeviceNameAsync(device.Ip, mac);
+                    if (_settings.DeviceNames.TryGetValue(mac, out var savedName) && !string.IsNullOrWhiteSpace(savedName)) name = savedName;
                     row = new DeviceRow(device.Ip, mac, "Desconectado") { Name = name };
                     _devicesByMac[mac] = row;
                     _devices.Add(row);
@@ -856,6 +859,103 @@ public partial class MainWindow : Window
         catch (Exception ex) { SetStatus("No se pudieron guardar los límites: " + ex.Message); }
     }
 
+
+    private void RenameSelectedDevice()
+    {
+        if (DevicesList.SelectedItem is not DeviceRow selected) return;
+        var dialog = new Window
+        {
+            Title = "Cambiar nombre del dispositivo", Owner = this, Width = 430, Height = 235,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize,
+            Background = (System.Windows.Media.Brush)Application.Current.Resources["PanelBrush"],
+            Foreground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"]
+        };
+        var root = new StackPanel { Margin = new Thickness(22) };
+        root.Children.Add(new TextBlock { Text = "Nombre actual del dispositivo", FontSize = 13, Margin = new Thickness(0,0,0,8) });
+        var nameBox = new System.Windows.Controls.TextBox { Text = selected.Name, Padding = new Thickness(10), FontSize = 14 };
+        root.Children.Add(nameBox);
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0,20,0,0) };
+        var cancel = new System.Windows.Controls.Button { Content = "Cancelar", MinWidth = 95 };
+        cancel.Click += (_, _) => dialog.DialogResult = false;
+        var save = new System.Windows.Controls.Button { Content = "Guardar", MinWidth = 95 };
+        save.Click += (_, _) =>
+        {
+            var newName = nameBox.Text.Trim();
+            if (string.IsNullOrWhiteSpace(newName) || newName.Length > 64)
+            {
+                System.Windows.MessageBox.Show(dialog, "Escribe un nombre de entre 1 y 64 caracteres.", "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                _settings.DeviceNames[selected.Mac] = newName;
+                SaveSettings();
+                selected.Name = newName;
+                SyncTrafficLimitRows();
+                SetStatus($"Nombre guardado para {selected.Mac}: {newName}");
+                dialog.DialogResult = true;
+            }
+            catch (Exception ex) { System.Windows.MessageBox.Show(dialog, "No se pudo guardar el nombre: " + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error); }
+        };
+        buttons.Children.Add(cancel); buttons.Children.Add(save); root.Children.Add(buttons); dialog.Content = root;
+        dialog.Loaded += (_, _) => { nameBox.Focus(); nameBox.SelectAll(); };
+        dialog.ShowDialog();
+    }
+
+    private void ConfigureSelectedDeviceTraffic()
+    {
+        if (DevicesList.SelectedItem is not DeviceRow selected) return;
+        var saved = _settings.TrafficLimits.FirstOrDefault(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
+        var dialog = new Window
+        {
+            Title = "Limitar tráfico del dispositivo", Owner = this, Width = 470, Height = 310,
+            WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize,
+            Background = (System.Windows.Media.Brush)Application.Current.Resources["PanelBrush"],
+            Foreground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"]
+        };
+        var root = new StackPanel { Margin = new Thickness(22) };
+        root.Children.Add(new TextBlock { Text = selected.Name, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,16) });
+        root.Children.Add(new TextBlock { Text = "↑  Velocidad máxima de subida (KB/s)", Margin = new Thickness(0,0,0,5) });
+        var uploadBox = new System.Windows.Controls.TextBox { Text = (saved?.UploadKBps ?? Math.Max(1, (saved?.UploadMbps ?? 3) * 125)).ToString(), Padding = new Thickness(9), Margin = new Thickness(0,0,0,14) };
+        root.Children.Add(uploadBox);
+        root.Children.Add(new TextBlock { Text = "↓  Velocidad máxima de bajada (KB/s)", Margin = new Thickness(0,0,0,5) });
+        var downloadBox = new System.Windows.Controls.TextBox { Text = (saved?.DownloadKBps ?? Math.Max(1, (saved?.DownloadMbps ?? 10) * 125)).ToString(), Padding = new Thickness(9) };
+        root.Children.Add(downloadBox);
+        var buttons = new StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0,20,0,0) };
+        var cancel = new System.Windows.Controls.Button { Content = "Cancelar", MinWidth = 95 };
+        cancel.Click += (_, _) => dialog.DialogResult = false;
+        var saveButton = new System.Windows.Controls.Button { Content = "Guardar", MinWidth = 95 };
+        saveButton.Click += (_, _) =>
+        {
+            if (!int.TryParse(uploadBox.Text.Trim(), out var up) || up < 1 || up > 1000000 ||
+                !int.TryParse(downloadBox.Text.Trim(), out var down) || down < 1 || down > 1000000)
+            {
+                System.Windows.MessageBox.Show(dialog, "Introduce valores enteros entre 1 y 1 000 000 KB/s para subida y bajada.", "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            try
+            {
+                _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
+                _settings.TrafficLimits.Add(new TrafficLimitSetting
+                {
+                    Mac = selected.Mac.ToUpperInvariant(), Ip = selected.Ip,
+                    UploadKBps = up, DownloadKBps = down,
+                    UploadMbps = Math.Clamp((int)Math.Ceiling(up / 125.0), 1, 50),
+                    DownloadMbps = Math.Clamp((int)Math.Ceiling(down / 125.0), 1, 100),
+                    UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss")
+                });
+                SaveSettings();
+                SyncTrafficLimitRows();
+                SetStatus($"Límites guardados para {selected.Name}: subida {up} KB/s, bajada {down} KB/s. Nota: esta versión guarda la configuración, pero aún no aplica el límite al tráfico real.");
+                System.Windows.MessageBox.Show(dialog, "Los límites quedaron guardados. El motor de limitación real del tráfico todavía no está integrado en esta versión.", "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Information);
+                dialog.DialogResult = true;
+            }
+            catch (Exception ex) { System.Windows.MessageBox.Show(dialog, "No se pudieron guardar los límites: " + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error); }
+        };
+        buttons.Children.Add(cancel); buttons.Children.Add(saveButton); root.Children.Add(buttons); dialog.Content = root;
+        dialog.ShowDialog();
+    }
+
     private static AppSettings? CurrentSettings;
     private static bool IsBlockedDevice(string mac, string ip) =>
         CurrentSettings?.BlockedDevices.Any(b =>
@@ -868,6 +968,8 @@ public partial class MainWindow : Window
         if (BlockDeviceButton is null) return;
         var selected = DevicesList.SelectedItem as DeviceRow;
         BlockDeviceButton.IsEnabled = selected is not null;
+        RenameDeviceButton.IsEnabled = selected is not null;
+        LimitDeviceTrafficButton.IsEnabled = selected is not null;
         BlockDeviceButton.Content = selected is not null && IsBlockedDevice(selected.Mac, selected.Ip) ? "Desbloquear dispositivo" : "Bloquear dispositivo";
     }
 
@@ -1269,6 +1371,7 @@ public partial class MainWindow : Window
         public string Password { get; set; } = "ChangeMe123";
         public List<BlockedDevice> BlockedDevices { get; set; } = new();
         public List<TrafficLimitSetting> TrafficLimits { get; set; } = new();
+        public Dictionary<string, string> DeviceNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     }
     private sealed class TrafficLimitSetting
     {
@@ -1276,6 +1379,8 @@ public partial class MainWindow : Window
         public string Ip { get; set; } = "";
         public int DownloadMbps { get; set; } = 10;
         public int UploadMbps { get; set; } = 3;
+        public int DownloadKBps { get; set; } = 1250;
+        public int UploadKBps { get; set; } = 375;
         public string UpdatedAt { get; set; } = "";
     }
     private sealed class BlockedDevice
