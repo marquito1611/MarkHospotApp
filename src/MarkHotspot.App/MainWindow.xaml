@@ -1,7 +1,7 @@
 <Window x:Class="MarkHotspot.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MarkHotspot" Height="780" Width="1120" MinHeight="650" MinWidth="900"
+        Title="MarkHotspot" Height="820" Width="1160" MinHeight="680" MinWidth="940"
         WindowStartupLocation="CenterScreen" Background="{StaticResource BackgroundBrush}"
         Foreground="{StaticResource MainTextBrush}">
     <Grid Margin="24">
@@ -44,12 +44,30 @@
                         <StackPanel><TextBlock Text="CONFIGURACIÓN WI-FI" FontSize="11" Foreground="{StaticResource MutedBrush}"/><TextBlock Text="SSID y contraseña" FontSize="19" FontWeight="Bold" Margin="0,8,0,12"/><TextBlock Text="Nombre de red" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/><TextBox x:Name="SsidBox" Text="MarkHotspot" Padding="8" Margin="0,0,0,10"/><TextBlock Text="Contraseña (8–63 caracteres)" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/><PasswordBox x:Name="PasswordBox" Password="ChangeMe123" Padding="8"/></StackPanel>
                     </Border>
                 </Grid>
+                <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Dispositivos detectados" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Lectura de vecinos IPv4 de Windows; no todos los equipos responden a la búsqueda." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="DevicesCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/><Button x:Name="ScanDevicesButton" Content="Buscar dispositivos" Click="ScanDevicesButton_Click"/></StackPanel></Grid>
+                        <ListView x:Name="DevicesList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="150" MaxHeight="240">
+                            <ListView.View><GridView><GridViewColumn Header="Dirección IP" DisplayMemberBinding="{Binding Ip}" Width="150"/><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding State}" Width="140"/></GridView></ListView.View>
+                        </ListView>
+                        <WrapPanel Margin="0,10,0,0"><Button x:Name="AddToBlacklistButton" Content="Bloquear dispositivo seleccionado" Click="AddToBlacklistButton_Click"/></WrapPanel>
+                    </StackPanel>
+                </Border>
+                <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Lista negra" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Se guarda en la configuración local. Las reglas de Firewall del equipo no garantizan bloquear el tráfico reenviado del hotspot." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><TextBlock Grid.Column="1" x:Name="BlacklistCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0"/></Grid>
+                        <ListView x:Name="BlacklistList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="100" MaxHeight="200">
+                            <ListView.View><GridView><GridViewColumn Header="Dirección IP" DisplayMemberBinding="{Binding Ip}" Width="150"/><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Añadido" DisplayMemberBinding="{Binding AddedAt}" Width="150"/></GridView></ListView.View>
+                        </ListView>
+                        <WrapPanel Margin="0,10,0,0"><Button x:Name="RemoveFromBlacklistButton" Content="Quitar de lista negra" Click="RemoveFromBlacklistButton_Click"/></WrapPanel>
+                    </StackPanel>
+                </Border>
                 <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20">
                     <StackPanel><TextBlock Text="Interfaces de red" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
-                        <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="170">
+                        <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="150" MaxHeight="220">
                             <ListView.View><GridView><GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="230"/><GridViewColumn Header="Tipo" DisplayMemberBinding="{Binding Type}" Width="120"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding Status}" Width="100"/><GridViewColumn Header="Velocidad" DisplayMemberBinding="{Binding Speed}" Width="110"/></GridView></ListView.View>
                         </ListView>
-                        <TextBlock Text="El botón usa Hosted Network heredado de netsh. Si el controlador no admite esa API, se muestra el error. Esto no equivale al Mobile Hotspot moderno ni configura ICS automáticamente." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                        <TextBlock Text="El inicio del punto de acceso usa Hosted Network heredado. El control de tráfico por dispositivo y el bloqueo efectivo del tráfico reenviado todavía requieren un motor de filtrado compatible y pruebas en Windows." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
