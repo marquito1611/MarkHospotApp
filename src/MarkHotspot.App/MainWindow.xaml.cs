@@ -28,7 +28,9 @@ public partial class MainWindow : Window
         BlacklistList.ItemsSource = _blockedDevices;
         LoadSettings();
         SsidBox.Text = _settings.Ssid;
+        SettingsSsidBox.Text = _settings.Ssid;
         PasswordBox.Password = _settings.Password;
+        PasswordVisibleBox.Text = _settings.Password;
         RefreshAdapters();
         LoadBlacklistRows();
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
@@ -38,6 +40,58 @@ public partial class MainWindow : Window
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
         };
+    }
+
+    private void ShowPage(System.Windows.Controls.StackPanel page)
+    {
+        HomePage.Visibility = Visibility.Collapsed;
+        DevicesPage.Visibility = Visibility.Collapsed;
+        TrafficPage.Visibility = Visibility.Collapsed;
+        BlacklistPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        page.Visibility = Visibility.Visible;
+    }
+
+    private void DevicesNav_Click(object sender, RoutedEventArgs e) => ShowPage(DevicesPage);
+    private void TrafficNav_Click(object sender, RoutedEventArgs e) => ShowPage(TrafficPage);
+    private void BlacklistNav_Click(object sender, RoutedEventArgs e) => ShowPage(BlacklistPage);
+    private void SettingsNav_Click(object sender, RoutedEventArgs e) => ShowPage(SettingsPage);
+
+    private void TogglePasswordButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (PasswordBox.Visibility == Visibility.Visible)
+        {
+            PasswordVisibleBox.Text = PasswordBox.Password;
+            PasswordBox.Visibility = Visibility.Collapsed;
+            PasswordVisibleBox.Visibility = Visibility.Visible;
+            PasswordVisibleBox.Focus();
+            PasswordVisibleBox.CaretIndex = PasswordVisibleBox.Text.Length;
+        }
+        else
+        {
+            PasswordBox.Password = PasswordVisibleBox.Text;
+            PasswordVisibleBox.Visibility = Visibility.Collapsed;
+            PasswordBox.Visibility = Visibility.Visible;
+            PasswordBox.Focus();
+        }
+    }
+
+    private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var ssid = SettingsSsidBox.Text.Trim();
+        if (ssid.Length is < 1 or > 32)
+        {
+            SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres.");
+            return;
+        }
+        _settings.Ssid = ssid;
+        SsidBox.Text = ssid;
+        try
+        {
+            SaveSettings();
+            SetStatus("Nombre de red guardado. Para aplicarlo al hotspot, pulsa Iniciar hotspot heredado.");
+        }
+        catch (Exception ex) { SetStatus("No se pudo guardar la configuración: " + ex.Message); }
     }
 
     private void LoadSettings()
@@ -71,7 +125,7 @@ public partial class MainWindow : Window
         try
         {
             var ssid = SsidBox.Text.Trim();
-            var password = PasswordBox.Password;
+            var password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordVisibleBox.Text;
             if (ssid.Length is < 1 or > 32) { SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres."); return; }
             if (password.Length is < 8 or > 63) { SetStatus("La contraseña debe tener entre 8 y 63 caracteres."); return; }
             if (password.Contains('"')) { SetStatus("La contraseña no puede contener comillas dobles en esta versión."); return; }
