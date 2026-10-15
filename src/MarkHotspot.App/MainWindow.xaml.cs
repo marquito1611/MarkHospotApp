@@ -16,6 +16,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<AdapterRow> _adapters = new();
     private readonly ObservableCollection<DeviceRow> _devices = new();
+    private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
     private readonly ObservableCollection<BlockedDeviceRow> _blockedDevices = new();
     private readonly string _dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MarkHotspot");
     private readonly string _settingsPath;
@@ -248,17 +249,21 @@ public partial class MainWindow : Window
         ScanDevicesButton.IsEnabled = false;
         try
         {
-            SetStatus("Buscando clientes únicamente en la red local del hotspot…");
-            _devices.Clear();
+            SetStatus("Buscando dispositivos por MAC y resolviendo sus nombres…");
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
             if (hotspotAddresses.Count == 0)
             {
-                DevicesCountText.Text = "0";
-                SetStatus("No se encontró la interfaz local del hotspot. Inicia el hotspot de Windows y vuelve a buscar. No se mostrarán dispositivos de otras redes.");
+                DevicesCountText.Text = _devices.Count.ToString();
+                SetStatus("No se encontró la interfaz local del hotspot. Inicia el hotspot de Windows y vuelve a buscar.");
                 return;
             }
 
-            var found = new Dictionary<string, DeviceRow>(StringComparer.OrdinalIgnoreCase);
+            var connectedMacs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var hosted = await RunNetshAsync("wlan show hostednetwork");
+            foreach (Match match in Regex.Matches(hosted.Output, @"\b[0-9a-fA-F]{2}(?:[:-][0-9a-fA-F]{2}){5}\b"))
+                connectedMacs.Add(match.Value.Replace('-', ':').ToUpperInvariant());
+
+            var found = new Dictionary<string, (string Ip, string Mac)>(StringComparer.OrdinalIgnoreCase);
             foreach (var localAddress in hotspotAddresses)
             {
                 var result = await RunProcessAsync("arp.exe", $"-a -N {localAddress}");
@@ -266,21 +271,74 @@ public partial class MainWindow : Window
                 {
                     if (!IsInSameSubnet(localAddress, device.Ip)) continue;
                     if (IPAddress.TryParse(device.Ip, out var ip) && ip.Equals(IPAddress.Parse(localAddress))) continue;
-                    found[device.Ip] = device;
+                    if (string.IsNullOrWhiteSpace(device.Mac)) continue;
+                    found[device.Mac] = (device.Ip, device.Mac);
                 }
             }
 
-            foreach (var device in found.Values.OrderBy(d => d.Ip))
+            foreach (var device in found.Values)
             {
-                var blocked = _settings.Blacklist.Any(b => b.Ip == device.Ip ||
-                    (!string.IsNullOrWhiteSpace(device.Mac) && b.Mac.Equals(device.Mac, StringComparison.OrdinalIgnoreCase)));
-                _devices.Add(new DeviceRow(device.Ip, device.Mac, blocked ? "En lista negra" : device.State));
+                var mac = device.Mac.ToUpperInvariant();
+                if (!_devicesByMac.TryGetValue(mac, out var row))
+                {
+                    var name = await ResolveDeviceNameAsync(device.Ip, mac);
+                    row = new DeviceRow(device.Ip, mac, "Desconectado") { Name = name };
+                    _devicesByMac[mac] = row;
+                    _devices.Add(row);
+                }
+                row.Ip = device.Ip;
+                var ping = await PingDeviceAsync(device.Ip);
+                row.State = connectedMacs.Contains(mac) || ping ? "Conectado" : "Desconectado";
+                if (_settings.Blacklist.Any(b => !string.IsNullOrWhiteSpace(b.Mac) && b.Mac.Equals(mac, StringComparison.OrdinalIgnoreCase)))
+                    row.State += " · Lista negra";
             }
+
+            foreach (var row in _devices)
+                if (!found.ContainsKey(row.Mac) && !connectedMacs.Contains(row.Mac))
+                    row.State = "Desconectado" + (_settings.Blacklist.Any(b => b.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase)) ? " · Lista negra" : "");
+
+            var ordered = _devices.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            _devices.Clear();
+            foreach (var row in ordered) _devices.Add(row);
             DevicesCountText.Text = _devices.Count.ToString();
-            SetStatus($"Escaneo terminado: {_devices.Count} direcciones encontradas dentro de la subred del hotspot. Windows solo muestra clientes que aparecen en su caché ARP; los clientes pueden tardar en aparecer.");
+            SetStatus($"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Los nombres dependen de lo que cada equipo anuncie a la red; algunos solo permiten mostrar un nombre genérico.");
         }
         catch (Exception ex) { SetStatus("Error al buscar clientes del hotspot: " + ex.Message); }
         finally { ScanDevicesButton.IsEnabled = true; }
+    }
+
+    private static async Task<string> ResolveDeviceNameAsync(string ip, string mac)
+    {
+        try
+        {
+            var task = Dns.GetHostEntryAsync(ip);
+            if (await Task.WhenAny(task, Task.Delay(800)) == task)
+            {
+                var host = (await task).HostName.TrimEnd('.');
+                if (!string.IsNullOrWhiteSpace(host) && !host.Equals(ip, StringComparison.OrdinalIgnoreCase))
+                    return host.Split('.')[0];
+            }
+        }
+        catch { }
+        try
+        {
+            var result = await RunProcessAsync("nbtstat.exe", $"-A {ip}");
+            var match = Regex.Match(result.Output, @"^\s*([^\s<]+)\s+<00>\s+UNIQUE", RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            if (match.Success) return match.Groups[1].Value.Trim();
+        }
+        catch { }
+        return "Dispositivo " + mac[^5..].Replace(":", "");
+    }
+
+    private static async Task<bool> PingDeviceAsync(string ip)
+    {
+        try
+        {
+            using var ping = new Ping();
+            var reply = await ping.SendPingAsync(ip, 300);
+            return reply.Status == IPStatus.Success;
+        }
+        catch { return false; }
     }
 
     private static IEnumerable<string> GetHotspotInterfaceAddresses()
