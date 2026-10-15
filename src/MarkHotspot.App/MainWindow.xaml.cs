@@ -1082,9 +1082,7 @@ public partial class MainWindow : Window
                 Ssid = ssid,
                 Passphrase = password
             };
-            var configureResult = await manager.ConfigureAccessPointAsync(configuration);
-            if (configureResult.Status != TetheringOperationStatus.Success)
-                return (false, "Windows no permitió aplicar el nombre y la contraseña configurados en MarkHotspot: " + configureResult.AdditionalErrorMessage);
+            await manager.ConfigureAccessPointAsync(configuration);
 
             var result = await manager.StartTetheringAsync();
             if (result.Status != TetheringOperationStatus.Success)
