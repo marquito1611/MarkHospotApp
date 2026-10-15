@@ -14,11 +14,11 @@
                     <TextBlock Text="NETWORK CONTROL" FontSize="10" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0"/>
                 </StackPanel>
                 <StackPanel>
-                    <Border Background="#2A2D32" CornerRadius="9" Padding="12" Margin="0,0,0,8"><TextBlock Text="◉   Panel principal" FontWeight="SemiBold"/></Border>
-                    <Button Content="▦   Dispositivos" Style="{StaticResource NavButtonStyle}" Click="DevicesNav_Click"/>
-                    <Button Content="⇅   Control de tráfico" Style="{StaticResource NavButtonStyle}" Click="TrafficNav_Click"/>
-                    <Button Content="⊘   Lista negra" Style="{StaticResource NavButtonStyle}" Click="BlacklistNav_Click"/>
-                    <Button Content="⚙   Configuración" Style="{StaticResource NavButtonStyle}" Click="SettingsNav_Click"/>
+                    <Button x:Name="HomeNavButton" Content="◉   Panel principal" Style="{StaticResource NavButtonStyle}" Click="HomeNav_Click"/>
+                    <Button x:Name="DevicesNavButton" Content="▦   Dispositivos" Style="{StaticResource NavButtonStyle}" Click="DevicesNav_Click"/>
+                    <Button x:Name="TrafficNavButton" Content="⇅   Control de tráfico" Style="{StaticResource NavButtonStyle}" Click="TrafficNav_Click"/>
+                    <Button x:Name="BlacklistNavButton" Content="⊘   Lista negra" Style="{StaticResource NavButtonStyle}" Click="BlacklistNav_Click"/>
+                    <Button x:Name="SettingsNavButton" Content="⚙   Configuración" Style="{StaticResource NavButtonStyle}" Click="SettingsNav_Click"/>
                 </StackPanel>
                 <StackPanel DockPanel.Dock="Bottom"><Separator Margin="0,12"/><TextBlock Text="MarkHotspot" FontWeight="SemiBold"/><TextBlock Text="Creada por GitHub: @marquito1611" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel>
             </DockPanel>
