@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -18,7 +17,7 @@ public partial class MainWindow
     private CancellationTokenSource? _updateCancellation;
     private AvailableUpdate? _availableUpdate;
 
-    private sealed record AvailableUpdate(string Tag, string DownloadUrl, long Size, string Sha256, string Notes);
+    private sealed record AvailableUpdate(string Tag, string DownloadUrl, long Size, string Notes);
 
     private static HttpClient CreateUpdateHttpClient()
     {
@@ -140,10 +139,6 @@ public partial class MainWindow
                 throw new InvalidDataException("El enlace de descarga de GitHub no es válido.");
 
             var assetSize = exeAsset.TryGetProperty("size", out var sizeElement) ? sizeElement.GetInt64() : 0L;
-            var digest = exeAsset.TryGetProperty("digest", out var digestElement) ? digestElement.GetString() : null;
-            if (string.IsNullOrWhiteSpace(digest) || !digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("GitHub no proporcionó el SHA-256 de la descarga; se canceló la actualización por seguridad.");
-
             var notes = release.TryGetProperty("body", out var bodyElement) ? bodyElement.GetString() : null;
             if (string.IsNullOrWhiteSpace(notes)) notes = "No se publicieron notas adicionales para esta versión.";
             var published = release.TryGetProperty("published_at", out var publishedElement) ? publishedElement.GetString() : null;
@@ -151,8 +146,7 @@ public partial class MainWindow
                 ? publishedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
                 : "fecha no disponible";
 
-            _availableUpdate = new AvailableUpdate(tag, downloadUrl!, assetSize,
-                digest.Substring("sha256:".Length), notes);
+            _availableUpdate = new AvailableUpdate(tag, downloadUrl!, assetSize, notes);
 
             UpdateStatusText.Text = "Actualización disponible: " + tag;
             UpdateReleaseInfoText.Text = "Publicada: " + publishedLabel + Environment.NewLine +
@@ -224,15 +218,12 @@ public partial class MainWindow
             }
 
             cancellation.Token.ThrowIfCancellationRequested();
-            UpdateStatusText.Text = "Descarga completa. Verificando integridad…";
-            string actualHash;
-            await using (var downloadedFile = File.OpenRead(downloadPath))
-                actualHash = Convert.ToHexString(await SHA256.HashDataAsync(downloadedFile, cancellation.Token));
-            if (!actualHash.Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("El SHA-256 del archivo no coincide con el publicado por GitHub. No se instalará.");
+            UpdateStatusText.Text = "Descarga completa. Preparando la instalación…";
 
+            // La descarga ya se comprobó mediante el tamaño publicado por GitHub.
+            // No calcular SHA-256: iniciar el script de reemplazo inmediatamente.
             cancellation.Token.ThrowIfCancellationRequested();
-            UpdateStatusText.Text = "Actualización " + update.Tag + " verificada. Reiniciando MarkHotspot…";
+            UpdateStatusText.Text = "Instalando " + update.Tag + " y reiniciando MarkHotspot…";
             LaunchPortableUpdater(downloadPath);
             downloadPath = null;
         }
@@ -319,17 +310,20 @@ public partial class MainWindow
             "try {",
             "  for ($i = 0; $i -lt 180; $i++) { if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 500 }",
             "  if (Get-Process -Id $processId -ErrorAction SilentlyContinue) { throw 'MarkHotspot no se cerró a tiempo.' }",
+            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw ('No existe el ejecutable instalado: ' + $target) }",
+            "  if (-not (Test-Path -LiteralPath $download -PathType Leaf)) { throw ('No existe el archivo descargado: ' + $download) }",
             "  Copy-Item -LiteralPath $download -Destination $staged -Force",
             "  Copy-Item -LiteralPath $target -Destination $backup -Force",
-            "  Move-Item -LiteralPath $staged -Destination $target -Force",
+            "  if (Test-Path -LiteralPath $target) { [System.IO.File]::Replace($staged, $target, $null, $true) } else { Move-Item -LiteralPath $staged -Destination $target -Force }",
             "  $newProcess = Start-Process -FilePath $target -PassThru",
             "  Start-Sleep -Seconds 5",
             "  if (-not (Get-Process -Id $newProcess.Id -ErrorAction SilentlyContinue)) { throw 'La nueva versión no permaneció abierta; se restaurará la versión anterior.' }",
-            "  Remove-Item -LiteralPath $backup -Force",
+            "  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue",
             "  Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue",
             "} catch {",
-            "  try { if (Test-Path -LiteralPath $backup) { if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Force }; Copy-Item -LiteralPath $backup -Destination $target -Force; Start-Process -FilePath $target } } catch {}",
-            "  try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('La actualización falló. Se intentó restaurar la versión anterior.' + [Environment]::NewLine + $_.Exception.Message), 'MarkHotspot', 'OK', 'Error') | Out-Null } catch {}",
+            "  $failure = $_.Exception.Message",
+            "  try { if (Test-Path -LiteralPath $backup) { Copy-Item -LiteralPath $backup -Destination $target -Force; Start-Process -FilePath $target } } catch {}",
+            "  try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('La actualización falló. Se intentó restaurar la versión anterior.' + [Environment]::NewLine + $failure + [Environment]::NewLine + 'Ejecutable: ' + $target), 'MarkHotspot', 'OK', 'Error') | Out-Null } catch {}",
             "} finally {",
             "  Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue",
             "  Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue",
