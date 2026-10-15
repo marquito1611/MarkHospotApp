@@ -9,6 +9,10 @@ using System.Windows;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
+using SharpPcap;
+using PacketDotNet;
+using System.Windows.Threading;
 
 namespace MarkHotspot;
 
@@ -17,6 +21,11 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<AdapterRow> _adapters = new();
     private readonly ObservableCollection<DeviceRow> _devices = new();
     private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private ICaptureDevice? _captureDevice;
+    private bool _captureStarted;
     private readonly ObservableCollection<BlockedDeviceRow> _blockedDevices = new();
     private readonly string _dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MarkHotspot");
     private readonly string _settingsPath;
@@ -29,6 +38,8 @@ public partial class MainWindow : Window
         _settingsPath = Path.Combine(_dataDirectory, "settings.json");
         AdaptersList.ItemsSource = _adapters;
         DevicesList.ItemsSource = _devices;
+        _trafficTimer.Tick += (_, _) => UpdateTrafficRates();
+        _trafficTimer.Start();
         BlacklistList.ItemsSource = _blockedDevices;
         LoadSettings();
         _changingTheme = true;
@@ -48,6 +59,8 @@ public partial class MainWindow : Window
         {
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
+            _trafficTimer.Stop();
+            StopTrafficCapture();
         };
     }
 
@@ -273,6 +286,7 @@ public partial class MainWindow : Window
                     if (IPAddress.TryParse(device.Ip, out var ip) && ip.Equals(IPAddress.Parse(localAddress))) continue;
                     if (string.IsNullOrWhiteSpace(device.Mac)) continue;
                     found[device.Mac] = (device.Ip, device.Mac);
+                    _macByIp[device.Ip] = device.Mac.ToUpperInvariant();
                 }
             }
 
@@ -300,6 +314,7 @@ public partial class MainWindow : Window
             var ordered = _devices.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
             _devices.Clear();
             foreach (var row in ordered) _devices.Add(row);
+            StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
             SetStatus($"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Los nombres dependen de lo que cada equipo anuncie a la red; algunos solo permiten mostrar un nombre genérico.");
         }
@@ -339,6 +354,92 @@ public partial class MainWindow : Window
             return reply.Status == IPStatus.Success;
         }
         catch { return false; }
+    }
+
+    private void StartTrafficCapture()
+    {
+        if (_captureStarted) return;
+        try
+        {
+            var hotspotNics = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(n => n.OperationalStatus == OperationalStatus.Up &&
+                    (n.Name.Contains("Local Area Connection*", StringComparison.OrdinalIgnoreCase) ||
+                     n.Name.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase) ||
+                     n.Description.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase) ||
+                     n.Description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            var devices = CaptureDeviceList.Instance;
+            var candidate = devices.FirstOrDefault(d => hotspotNics.Any(n =>
+                d.Name.Contains(n.Id.Trim('{', '}'), StringComparison.OrdinalIgnoreCase) ||
+                d.Description.Contains(n.Description, StringComparison.OrdinalIgnoreCase) ||
+                n.Description.Contains(d.Description, StringComparison.OrdinalIgnoreCase)));
+            if (candidate is null) return;
+            candidate.OnPacketArrival += TrafficPacketArrived;
+            candidate.Open(DeviceModes.Promiscuous, 1000);
+            candidate.StartCapture();
+            _captureDevice = candidate;
+            _captureStarted = true;
+        }
+        catch { StopTrafficCapture(); }
+    }
+
+    private void StopTrafficCapture()
+    {
+        try
+        {
+            if (_captureDevice is not null)
+            {
+                _captureDevice.OnPacketArrival -= TrafficPacketArrived;
+                if (_captureStarted) _captureDevice.StopCapture();
+                _captureDevice.Close();
+            }
+        }
+        catch { }
+        _captureDevice = null;
+        _captureStarted = false;
+    }
+
+    private void TrafficPacketArrived(object sender, PacketCapture capture)
+    {
+        try
+        {
+            var raw = capture.GetPacket();
+            var packet = Packet.ParsePacket(raw.LinkLayerType, raw.Data);
+            var ipv4 = packet.Extract<IPv4Packet>();
+            if (ipv4 is null) return;
+            var sourceIp = ipv4.SourceAddress.ToString();
+            var destinationIp = ipv4.DestinationAddress.ToString();
+            if (_macByIp.TryGetValue(sourceIp, out var uploadMac))
+                _trafficByMac.GetOrAdd(uploadMac, _ => new TrafficCounter()).AddUpload(raw.Data.Length);
+            if (_macByIp.TryGetValue(destinationIp, out var downloadMac))
+                _trafficByMac.GetOrAdd(downloadMac, _ => new TrafficCounter()).AddDownload(raw.Data.Length);
+        }
+        catch { }
+    }
+
+    private void UpdateTrafficRates()
+    {
+        foreach (var row in _devices)
+        {
+            if (_trafficByMac.TryGetValue(row.Mac, out var counter))
+                row.TrafficText = $"↑ {FormatRate(counter.TakeUpload())}   ↓ {FormatRate(counter.TakeDownload())}";
+            else
+                row.TrafficText = _captureStarted ? "↑ 0 B/s   ↓ 0 B/s" : "↑ —   ↓ —";
+        }
+    }
+
+    private static string FormatRate(long bytesPerSecond) =>
+        bytesPerSecond >= 1024 * 1024 ? $"{bytesPerSecond / 1024d / 1024d:0.0} MB/s" :
+        bytesPerSecond >= 1024 ? $"{bytesPerSecond / 1024d:0.0} KB/s" : $"{bytesPerSecond} B/s";
+
+    private sealed class TrafficCounter
+    {
+        private long _upload;
+        private long _download;
+        public void AddUpload(long bytes) => Interlocked.Add(ref _upload, bytes);
+        public void AddDownload(long bytes) => Interlocked.Add(ref _download, bytes);
+        public long TakeUpload() => Interlocked.Exchange(ref _upload, 0);
+        public long TakeDownload() => Interlocked.Exchange(ref _download, 0);
     }
 
     private static IEnumerable<string> GetHotspotInterfaceAddresses()
