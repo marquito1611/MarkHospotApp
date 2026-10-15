@@ -406,6 +406,7 @@ public partial class MainWindow : Window
             // do not bundle or redistribute the free Npcap installer.
             var index = await client.GetStringAsync("https://npcap.com/dist/");
             var versions = Regex.Matches(index, @"npcap-(\d+\.\d+)\.exe", RegexOptions.IgnoreCase)
+                .Cast<Match>()
                 .Select(m => m.Groups[1].Value)
                 .Distinct()
                 .Select(v => Version.TryParse(v, out var parsed) ? parsed : null)
