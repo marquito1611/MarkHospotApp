@@ -20,6 +20,7 @@ public partial class MainWindow : Window
 {
     private readonly ObservableCollection<AdapterRow> _adapters = new();
     private readonly ObservableCollection<DeviceRow> _devices = new();
+    private readonly ObservableCollection<TrafficLimitRow> _trafficLimits = new();
     private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
@@ -38,10 +39,12 @@ public partial class MainWindow : Window
         _settingsPath = Path.Combine(_dataDirectory, "settings.json");
         AdaptersList.ItemsSource = _adapters;
         DevicesList.ItemsSource = _devices;
+        TrafficLimitsList.ItemsSource = _trafficLimits;
         _trafficTimer.Tick += (_, _) => UpdateTrafficRates();
         _trafficTimer.Start();
         BlacklistList.ItemsSource = _blockedDevices;
         LoadSettings();
+        LoadTrafficLimitSettings();
         _changingTheme = true;
         DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
         LightThemeToggle.IsChecked = !_settings.IsDarkTheme;
@@ -200,6 +203,7 @@ public partial class MainWindow : Window
             if (File.Exists(_settingsPath))
                 _settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_settingsPath)) ?? new();
             _settings.Blacklist ??= new();
+            _settings.TrafficLimits ??= new();
         }
         catch (Exception ex) { SetStatus("No se pudo leer la configuración: " + ex.Message); }
     }
@@ -314,6 +318,7 @@ public partial class MainWindow : Window
             var ordered = _devices.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
             _devices.Clear();
             foreach (var row in ordered) _devices.Add(row);
+            SyncTrafficLimitRows();
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
             SetStatus(_captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Para medir tráfico instala Npcap (modo compatible con WinPcap) y vuelve a buscar dispositivos.");
@@ -496,6 +501,52 @@ public partial class MainWindow : Window
         return rows.Values.ToList();
     }
 
+    private void LoadTrafficLimitSettings()
+    {
+        _settings.TrafficLimits ??= new();
+        SyncTrafficLimitRows();
+    }
+
+    private void SyncTrafficLimitRows()
+    {
+        var existing = _trafficLimits.ToDictionary(x => x.Mac, StringComparer.OrdinalIgnoreCase);
+        _trafficLimits.Clear();
+        foreach (var device in _devices.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            if (!existing.TryGetValue(device.Mac, out var row))
+            {
+                var saved = _settings.TrafficLimits.FirstOrDefault(x => x.Mac.Equals(device.Mac, StringComparison.OrdinalIgnoreCase));
+                row = new TrafficLimitRow(device.Name, device.Ip, device.Mac, saved?.DownloadMbps ?? 10, saved?.UploadMbps ?? 3, device.State, device.TrafficText);
+            }
+            row.Name = device.Name;
+            row.Ip = device.Ip;
+            row.State = device.State;
+            row.TrafficText = device.TrafficText;
+            _trafficLimits.Add(row);
+        }
+        if (TrafficEngineStatusText is not null)
+            TrafficEngineStatusText.Text = "Las reglas por MAC se pueden configurar y guardar. El motor que regula paquetes reenviados por Windows todavía no está activo; no se aplican límites reales aún.";
+    }
+
+    private void ApplyDeviceLimit_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not System.Windows.Controls.Button { Tag: TrafficLimitRow row }) return;
+        if (!IPAddress.TryParse(row.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+        {
+            SetStatus("No se puede guardar la regla: el dispositivo todavía no tiene una IP IPv4 válida. Busca los dispositivos e inténtalo de nuevo.");
+            return;
+        }
+        _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase));
+        _settings.TrafficLimits.Add(new TrafficLimitSetting { Mac = row.Mac.ToUpperInvariant(), Ip = row.Ip, DownloadMbps = row.DownloadMbps, UploadMbps = row.UploadMbps, UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss") });
+        try
+        {
+            SaveSettings();
+            SetStatus($"Límites guardados para {row.Name} ({row.Mac}): descarga {row.DownloadMbps} Mbps y subida {row.UploadMbps} Mbps. Atención: todavía no se aplican al tráfico real.");
+            TrafficEngineStatusText.Text = "Configuración guardada localmente. Falta integrar y probar el motor de shaping de paquetes reenviados para aplicar límites reales.";
+        }
+        catch (Exception ex) { SetStatus("No se pudieron guardar los límites: " + ex.Message); }
+    }
+
     private async Task AddSelectedDeviceToBlacklistAsync()
     {
         if (DevicesList.SelectedItem is not DeviceRow selected) { SetStatus("Selecciona primero un dispositivo detectado."); return; }
@@ -612,6 +663,25 @@ public partial class MainWindow : Window
         if (new[] { "windows", "desktop", "laptop", "computer", "macbook", "imac", "lenovo", "dell", "hp-", "asus", "acer", "surface" }.Any(n.Contains)) return "🖥";
         return "▣";
     }
+    public sealed class TrafficLimitRow : INotifyPropertyChanged
+    {
+        private string _name, _ip, _state, _trafficText;
+        private int _downloadMbps, _uploadMbps;
+        public TrafficLimitRow(string name, string ip, string mac, int downloadMbps, int uploadMbps, string state, string trafficText)
+        { _name=name; _ip=ip; Mac=mac; _downloadMbps=Math.Clamp(downloadMbps,1,100); _uploadMbps=Math.Clamp(uploadMbps,1,50); _state=state; _trafficText=trafficText; }
+        public string Name { get=>_name; set { _name=value; OnPropertyChanged(); OnPropertyChanged(nameof(DeviceIcon)); } }
+        public string Ip { get=>_ip; set { _ip=value; OnPropertyChanged(); } }
+        public string Mac { get; }
+        public string State { get=>_state; set { _state=value; OnPropertyChanged(); OnPropertyChanged(nameof(StateBrush)); } }
+        public System.Windows.Media.Brush StateBrush => State.Equals("Conectado",StringComparison.OrdinalIgnoreCase) ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(30,91,70)) : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(76,61,43));
+        public string DeviceIcon => DetectDeviceIcon(Name);
+        public int DownloadMbps { get=>_downloadMbps; set { _downloadMbps=Math.Clamp(value,1,100); OnPropertyChanged(); } }
+        public int UploadMbps { get=>_uploadMbps; set { _uploadMbps=Math.Clamp(value,1,50); OnPropertyChanged(); } }
+        public string TrafficText { get=>_trafficText; set { _trafficText=value; OnPropertyChanged(); } }
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string? name=null) => PropertyChanged?.Invoke(this,new PropertyChangedEventArgs(name));
+    }
+
     public sealed record BlockedDeviceRow(string Ip, string Mac, string AddedAt);
     private sealed class AppSettings
     {
@@ -619,6 +689,15 @@ public partial class MainWindow : Window
         public string Ssid { get; set; } = "MarkHotspot";
         public string Password { get; set; } = "ChangeMe123";
         public List<BlockedDevice> Blacklist { get; set; } = new();
+        public List<TrafficLimitSetting> TrafficLimits { get; set; } = new();
+    }
+    private sealed class TrafficLimitSetting
+    {
+        public string Mac { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public int DownloadMbps { get; set; } = 10;
+        public int UploadMbps { get; set; } = 3;
+        public string UpdatedAt { get; set; } = "";
     }
     private sealed class BlockedDevice
     {
