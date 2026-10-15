@@ -8,6 +8,7 @@ on:
       - '**.xaml'
       - '**.csproj'
       - '**.sln'
+      - '**.manifest'
       - '.github/workflows/windows-build.yml'
   pull_request:
     branches: [main]
