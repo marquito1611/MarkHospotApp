@@ -39,6 +39,8 @@ public partial class MainWindow : Window
     private bool _allowExit;
     private bool _exitInProgress;
     private readonly DispatcherTimer _hotspotStateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private bool _deviceScanInProgress;
     private bool _hotspotOperationInProgress;
 
     public MainWindow()
@@ -60,6 +62,8 @@ public partial class MainWindow : Window
         Loaded += async (_, _) => await StartModernHotspotOnLaunchAsync();
         _hotspotStateTimer.Tick += async (_, _) => await RefreshModernHotspotStateAsync();
         _hotspotStateTimer.Start();
+        _deviceDiscoveryTimer.Tick += async (_, _) => await ScanDevicesAsync();
+        Loaded += (_, _) => _deviceDiscoveryTimer.Start();
         LoadTrafficLimitSettings();
         _changingTheme = true;
         DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
@@ -79,6 +83,400 @@ public partial class MainWindow : Window
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
             _trafficTimer.Stop();
             _hotspotStateTimer.Stop();
+            _deviceDiscoveryTimer.Stop();
+            StopTrafficCapture();
+            if (_trayIcon is not null)
+            {
+                _trayIcon.Visible = false;
+                _trayIcon.Dispose();
+                _trayIcon = null;
+            }
+        };
+    }
+
+    private void InitializeTrayIcon()
+    {
+        var menu = new System.Windows.Forms.ContextMenuStrip();
+        menu.Items.Add("Abrir MarkHotspot", null, (_, _) => ShowFromTray());
+        menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+        menu.Items.Add("Salir", null, async (_, _) => await ExitApplicationAsync());
+
+        _trayIcon = new System.Windows.Forms.NotifyIcon
+        {
+            Text = "MarkHotspot",
+            Icon = System.Drawing.Icon.ExtractAssociatedIcon(
+                Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName ?? string.Empty)
+                ?? System.Drawing.SystemIcons.Application,
+            ContextMenuStrip = menu,
+            Visible = true
+        };
+        _trayIcon.DoubleClick += (_, _) => ShowFromTray();
+    }
+
+    private void MainWindow_StateChanged(object? sender, EventArgs e)
+    {
+        if (WindowState == WindowState.Minimized)
+            HideToTray();
+    }
+
+    private void MainWindow_Closing(object? sender, CancelEventArgs e)
+    {
+        if (_allowExit) return;
+        e.Cancel = true;
+        HideToTray();
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        if (WindowState == WindowState.Minimized)
+            WindowState = WindowState.Normal;
+        if (_trayIcon is not null)
+        {
+            _trayIcon.BalloonTipTitle = "MarkHotspot";
+            _trayIcon.BalloonTipText = "La aplicación sigue ejecutándose en segundo plano.";
+            _trayIcon.ShowBalloonTip(1200);
+        }
+    }
+
+    private void ShowFromTray()
+    {
+        Show();
+        WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    private async Task ExitApplicationAsync()
+    {
+        if (_exitInProgress) return;
+        _exitInProgress = true;
+        try
+        {
+            var result = await StopModernHotspotAsync();
+            if (!result.Success)
+            {
+                var answer = System.Windows.MessageBox.Show(
+                    "Windows no confirmó que el hotspot se haya detenido. ¿Quieres salir de MarkHotspot de todos modos?",
+                    "MarkHotspot", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes)
+                {
+                    _exitInProgress = false;
+                    return;
+                }
+            }
+
+            _allowExit = true;
+            if (_trayIcon is not null) _trayIcon.Visible = false;
+            Close();
+        }
+        catch (Exception ex)
+        {
+            var answer = System.Windows.MessageBox.Show(
+                "No se pudo detener el hotspot: " + ex.Message + "\\n\\n¿Quieres salir de todos modos?",
+                "MarkHotspot", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (answer == MessageBoxResult.Yes)
+            {
+                _allowExit = true;
+                if (_trayIcon is not null) _trayIcon.Visible = false;
+                Close();
+            }
+            else _exitInProgress = false;
+        }
+    }
+
+    private void ShowPage(System.Windows.Controls.StackPanel page)
+    {
+        HomePage.Visibility = Visibility.Collapsed;
+        DevicesPage.Visibility = Visibility.Collapsed;
+        SettingsPage.Visibility = Visibility.Collapsed;
+        AboutPage.Visibility = Visibility.Collapsed;
+        page.Visibility = Visibility.Visible;
+
+        var active = page == HomePage ? HomeNavButton
+            : page == DevicesPage ? DevicesNavButton
+            : page == SettingsPage ? SettingsNavButton
+            : AboutNavButton;
+
+        var selectedBackground = new System.Windows.Media.SolidColorBrush(
+            (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(
+                _settings.IsDarkTheme ? "#2A3B59" : "#DBEAFE"));
+        var activeForeground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"];
+        var inactiveForeground = (System.Windows.Media.Brush)Application.Current.Resources["MutedBrush"];
+
+        foreach (var button in new[] { HomeNavButton, DevicesNavButton, SettingsNavButton, AboutNavButton })
+        {
+            button.Background = System.Windows.Media.Brushes.Transparent;
+            button.Foreground = inactiveForeground;
+            button.FontWeight = System.Windows.FontWeights.Normal;
+        }
+
+        active.Background = selectedBackground;
+        active.Foreground = activeForeground;
+        active.FontWeight = System.Windows.FontWeights.SemiBold;
+    }
+
+    private void HomeNav_Click(object sender, RoutedEventArgs e) => ShowPage(HomePage);
+
+    private void LightThemeToggle_Checked(object sender, RoutedEventArgs e) => SetTheme(false);
+    private void DarkThemeToggle_Checked(object sender, RoutedEventArgs e) => SetTheme(true);
+
+    private void LightThemeToggle_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (_changingTheme || DarkThemeToggle.IsChecked == true) return;
+        _changingTheme = true;
+        LightThemeToggle.IsChecked = true;
+        _changingTheme = false;
+        SetTheme(false);
+    }
+
+    private void DarkThemeToggle_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (_changingTheme || LightThemeToggle.IsChecked == true) return;
+        _changingTheme = true;
+        DarkThemeToggle.IsChecked = true;
+        _changingTheme = false;
+        SetTheme(true);
+    }
+
+    private void SetTheme(bool dark)
+    {
+        if (_changingTheme) return;
+        _changingTheme = true;
+        if (dark) LightThemeToggle.IsChecked = false;
+        else DarkThemeToggle.IsChecked = false;
+        _settings.IsDarkTheme = dark;
+        ApplyTheme(dark);
+        try { SaveSettings(); }
+        catch (Exception ex) { SetStatus("No se pudo guardar el tema: " + ex.Message); }
+        _changingTheme = false;
+    }
+
+    private static void ApplyTheme(bool dark)
+    {
+        SetBrushColor("BackgroundBrush", dark ? "#101319" : "#F3F6FB");
+        SetBrushColor("PanelBrush", dark ? "#191E27" : "#FFFFFF");
+        SetBrushColor("AccentBrush", dark ? "#3B82F6" : "#2563EB");
+        SetBrushColor("MutedBrush", dark ? "#9AA4B2" : "#5B6472");
+        SetBrushColor("MainTextBrush", dark ? "#F4F6FA" : "#172033");
+    }
+
+    private static void SetBrushColor(string key, string hex)
+    {
+        // Resource brushes declared in XAML may be frozen (read-only).
+        // Replace the resource with a fresh brush instead of mutating its Color.
+        var color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
+        Application.Current.Resources[key] = new System.Windows.Media.SolidColorBrush(color);
+    }
+
+    private void DevicesNav_Click(object sender, RoutedEventArgs e) => ShowPage(DevicesPage);
+    private void SettingsNav_Click(object sender, RoutedEventArgs e) => ShowPage(SettingsPage);
+    private void AboutNav_Click(object sender, RoutedEventArgs e) => ShowPage(AboutPage);
+
+    private void TogglePasswordButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (PasswordBox.Visibility == Visibility.Visible)
+        {
+            PasswordVisibleBox.Text = PasswordBox.Password;
+            PasswordBox.Visibility = Visibility.Collapsed;
+            PasswordVisibleBox.Visibility = Visibility.Visible;
+            PasswordEyeSlashPath.Visibility = Visibility.Visible;
+            PasswordVisibleBox.Focus();
+            PasswordVisibleBox.CaretIndex = PasswordVisibleBox.Text.Length;
+        }
+        else
+        {
+            PasswordBox.Password = PasswordVisibleBox.Text;
+            PasswordVisibleBox.Visibility = Visibility.Collapsed;
+            PasswordEyeSlashPath.Visibility = Visibility.Collapsed;
+            PasswordBox.Visibility = Visibility.Visible;
+            PasswordBox.Focus();
+        }
+    }
+
+    private void SaveSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var ssid = SettingsSsidBox.Text.Trim();
+        if (ssid.Length is < 1 or > 32)
+        {
+            SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres.");
+            return;
+        }
+        _settings.Ssid = ssid;
+        SsidBox.Text = ssid;
+        try
+        {
+            SaveSettings();
+            SetStatus("Nombre de red guardado. Para aplicarlo al hotspot, pulsa Iniciar hotspot heredado.");
+        }
+        catch (Exception ex) { SetStatus("No se pudo guardar la configuración: " + ex.Message); }
+    }
+
+    private void LoadSettings()
+    {
+        try
+        {
+            Directory.CreateDirectory(_dataDirectory);
+            if (File.Exists(_settingsPath))
+            {
+                var json = File.ReadAllText(_settingsPath);
+                _settings = JsonSerializer.Deserialize<AppSettings>(json) ?? new();
+                // Migrate settings files created by older versions.
+                if (_settings.BlockedDevices.Count == 0)
+                {
+                    using var document = JsonDocument.Parse(json);
+                    if (document.RootElement.TryGetProperty("Blacklist", out var legacyBlocked))
+                        _settings.BlockedDevices = JsonSerializer.Deserialize<List<BlockedDevice>>(legacyBlocked.GetRawText()) ?? new();
+                }
+            }
+            _settings.BlockedDevices ??= new();
+            _settings.TrafficLimits ??= new();
+        }
+        catch (Exception ex) { SetStatus("No se pudo leer la configuración: " + ex.Message); }
+    }
+
+    private void SaveSettings()
+    {
+        Directory.CreateDirectory(_dataDirectory);
+        var temporary = _settingsPath + ".tmp";
+        File.WriteAllText(temporary, JsonSerializer.Serialize(_settings, new JsonSerializerOptions { WriteIndented = true }));
+        File.Move(temporary, _settingsPath, true);
+    }
+
+    private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshAdapters();
+    private async void ScanDevicesButton_Click(object sender, RoutedEventArgs e) => await ScanDevicesAsync();
+    private async void BlockDeviceButton_Click(object sender, RoutedEventArgs e) => await ToggleDeviceBlockAsync();
+
+    private async void StartButton_Click(object sender, RoutedEventArgs e)
+    {
+        StartButton.IsEnabled = false;
+        try
+        {
+            var ssid = SsidBox.Text.Trim();
+            var password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordVisibleBox.Text;
+            if (ssid.Length is < 1 or > 32) { SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres."); return; }
+            if (password.Length is < 8 or > 63) { SetStatus("La contraseña debe tener entre 8 y 63 caracteres."); return; }
+            if (password.Contains('"')) { SetStatus("La contraseña no puede contener comillas dobles en esta versión."); return; }
+            _settings.Ssid = ssid;
+            _settings.Password = password;
+            SaveSettings();
+            HotspotStateText.Text = "Activando Hotspot…";
+            HotspotDetailText.Text = "Solicitando a Windows que active el Mobile Hotspot moderno…";
+            var result = await StartModernHotspotAsync();
+            if (!result.Success)
+            {
+                HotspotStateText.Text = "Hotspot Detenido";
+                HotspotDetailText.Text = result.Message;
+                return;
+            }
+            await ConfirmHotspotStateAsync();
+            await RefreshAdaptersAsync();
+            await ScanDevicesAsync();
+        }
+        catch (Exception ex) { SetStatus("Error al iniciar el punto de acceso: " + ex.Message); }
+        finally { StartButton.IsEnabled = true; }
+    }
+
+    private async void StopButton_Click(object sender, RoutedEventArgs e)
+    {
+        StopButton.IsEnabled = false;
+        try
+        {
+            HotspotStateText.Text = "Hotspot Deteniendo…";
+            var result = await StopModernHotspotAsync();
+            HotspotStateText.Text = "Hotspot Detenido";
+            HotspotDetailText.Text = result.Message;
+            await RefreshModernHotspotStateAsync();
+        }
+        catch (Exception ex) { SetStatus("Error al detener: " + ex.Message); }
+        finally { StopButton.IsEnabled = true; }
+    }
+
+using System.IO;
+using System.Diagnostics;
+using Microsoft.Win32;
+using Windows.Networking.Connectivity;
+using Windows.Networking.NetworkOperators;
+using System.Net;
+using System.Net.NetworkInformation;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Windows;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Collections.Concurrent;
+using SharpPcap;
+using PacketDotNet;
+using System.Windows.Threading;
+using Application = System.Windows.Application;
+
+namespace MarkHotspot;
+
+public partial class MainWindow : Window
+{
+    private readonly ObservableCollection<AdapterRow> _adapters = new();
+    private readonly ObservableCollection<DeviceRow> _devices = new();
+    private readonly ObservableCollection<TrafficLimitRow> _trafficLimits = new();
+    private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private ICaptureDevice? _captureDevice;
+    private bool _captureStarted;
+    private readonly string _dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MarkHotspot");
+    private readonly string _settingsPath;
+    private AppSettings _settings = new();
+    private bool _changingTheme;
+    private System.Windows.Forms.NotifyIcon? _trayIcon;
+    private bool _allowExit;
+    private bool _exitInProgress;
+    private readonly DispatcherTimer _hotspotStateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private bool _deviceScanInProgress;
+    private bool _hotspotOperationInProgress;
+
+    public MainWindow()
+    {
+        InitializeComponent();
+        InitializeTrayIcon();
+        Closing += MainWindow_Closing;
+        StateChanged += MainWindow_StateChanged;
+        _settingsPath = Path.Combine(_dataDirectory, "settings.json");
+        AdaptersList.ItemsSource = _adapters;
+        DevicesList.ItemsSource = _devices;
+        TrafficLimitsList.ItemsSource = _trafficLimits;
+        _trafficTimer.Tick += (_, _) => UpdateTrafficRates();
+        _trafficTimer.Start();
+        LoadSettings();
+        CurrentSettings = _settings;
+        AutoStartToggle.IsChecked = _settings.StartWithWindows;
+        ApplyStartupRegistration(_settings.StartWithWindows);
+        Loaded += async (_, _) => await StartModernHotspotOnLaunchAsync();
+        _hotspotStateTimer.Tick += async (_, _) => await RefreshModernHotspotStateAsync();
+        _hotspotStateTimer.Start();
+        _deviceDiscoveryTimer.Tick += async (_, _) => await ScanDevicesAsync();
+        Loaded += (_, _) => _deviceDiscoveryTimer.Start();
+        LoadTrafficLimitSettings();
+        _changingTheme = true;
+        DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
+        LightThemeToggle.IsChecked = !_settings.IsDarkTheme;
+        _changingTheme = false;
+        ApplyTheme(_settings.IsDarkTheme);
+        SsidBox.Text = _settings.Ssid;
+        SettingsSsidBox.Text = _settings.Ssid;
+        PasswordBox.Password = _settings.Password;
+        PasswordVisibleBox.Text = _settings.Password;
+        RefreshAdapters();
+        NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
+        NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
+        Closed += (_, _) =>
+        {
+            NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
+            NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
+            _trafficTimer.Stop();
+            _hotspotStateTimer.Stop();
+            _deviceDiscoveryTimer.Stop();
             StopTrafficCapture();
             if (_trayIcon is not null)
             {
@@ -388,20 +786,16 @@ public partial class MainWindow : Window
 
     private async Task ScanDevicesAsync()
     {
+        if (_deviceScanInProgress) return;
+        _deviceScanInProgress = true;
         ScanDevicesButton.IsEnabled = false;
         try
         {
+            // Automatic scans must never launch an installer repeatedly.
             if (!IsNpcapInstalled())
-            {
-                var installed = await DownloadAndInstallNpcapAsync();
-                if (!installed)
-                {
-                    SetStatus("No se pudo confirmar la instalación de Npcap. Instálalo y vuelve a buscar dispositivos.");
-                    return;
-                }
-            }
+                SetStatus("Detectando dispositivos automáticamente. Sin Npcap, la detección por ARP puede ser limitada.");
 
-            SetStatus("Buscando dispositivos por MAC y resolviendo sus nombres…");
+            SetStatus("Actualizando automáticamente los dispositivos conectados…");
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
             if (hotspotAddresses.Count == 0)
             {
@@ -454,10 +848,14 @@ public partial class MainWindow : Window
             SyncTrafficLimitRows();
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
-            SetStatus(_captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Npcap está instalado, pero no se pudo iniciar la captura en la interfaz del hotspot.");
+            SetStatus(_captureStarted ? $"Detección automática activa: {_devices.Count} dispositivos en la lista. Tráfico en vivo activo." : $"Detección automática actualizada: {_devices.Count} dispositivos en la lista. La captura de tráfico requiere Npcap.");
         }
-        catch (Exception ex) { SetStatus("Error al buscar clientes del hotspot: " + ex.Message); }
-        finally { ScanDevicesButton.IsEnabled = true; }
+        catch (Exception ex) { SetStatus("Error en la detección automática: " + ex.Message); }
+        finally
+        {
+            _deviceScanInProgress = false;
+            ScanDevicesButton.IsEnabled = true;
+        }
     }
 
     private static async Task<string> ResolveDeviceNameAsync(string ip, string mac)
