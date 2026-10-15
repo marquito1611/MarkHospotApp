@@ -1,5 +1,6 @@
 using System.IO;
 using System.Diagnostics;
+using Microsoft.Win32;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Text;
@@ -267,6 +268,16 @@ public partial class MainWindow : Window
         ScanDevicesButton.IsEnabled = false;
         try
         {
+            if (!IsNpcapInstalled())
+            {
+                var installed = await DownloadAndInstallNpcapAsync();
+                if (!installed)
+                {
+                    SetStatus("No se pudo confirmar la instalación de Npcap. Instálalo y vuelve a buscar dispositivos.");
+                    return;
+                }
+            }
+
             SetStatus("Buscando dispositivos por MAC y resolviendo sus nombres…");
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
             if (hotspotAddresses.Count == 0)
@@ -320,7 +331,7 @@ public partial class MainWindow : Window
             SyncTrafficLimitRows();
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
-            SetStatus(_captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Para medir tráfico instala Npcap (modo compatible con WinPcap) y vuelve a buscar dispositivos.");
+            SetStatus(_captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos únicos por MAC. Npcap está instalado, pero no se pudo iniciar la captura en la interfaz del hotspot.");
         }
         catch (Exception ex) { SetStatus("Error al buscar clientes del hotspot: " + ex.Message); }
         finally { ScanDevicesButton.IsEnabled = true; }
@@ -370,6 +381,103 @@ public partial class MainWindow : Window
             return reply.Status == IPStatus.Success;
         }
         catch { return false; }
+    }
+
+    private static bool IsNpcapInstalled()
+    {
+        try
+        {
+            using var key = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\npcap");
+            return key is not null;
+        }
+        catch { return false; }
+    }
+
+    private async Task<bool> DownloadAndInstallNpcapAsync()
+    {
+        string? installerPath = null;
+        try
+        {
+            SetStatus("Npcap no está instalado. Buscando el instalador oficial…");
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(3) };
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("MarkHotspot/1.0");
+
+            // Discover the current version from Npcap's official download directory;
+            // do not bundle or redistribute the free Npcap installer.
+            var index = await client.GetStringAsync("https://npcap.com/dist/");
+            var versions = Regex.Matches(index, @"npcap-(\d+\.\d+)\.exe", RegexOptions.IgnoreCase)
+                .Select(m => m.Groups[1].Value)
+                .Distinct()
+                .Select(v => Version.TryParse(v, out var parsed) ? parsed : null)
+                .Where(v => v is not null)
+                .Cast<Version>()
+                .OrderByDescending(v => v)
+                .ToList();
+
+            if (versions.Count == 0)
+                throw new InvalidOperationException("No se pudo identificar una versión del instalador en la página oficial de Npcap.");
+
+            var version = versions[0];
+            var downloadUrl = $"https://npcap.com/dist/npcap-{version}.exe";
+            var installDirectory = Path.Combine(_dataDirectory, "Dependencies");
+            Directory.CreateDirectory(installDirectory);
+            installerPath = Path.Combine(installDirectory, $"npcap-{version}.exe");
+
+            SetStatus($"Descargando Npcap {version} desde el sitio oficial…");
+            using (var response = await client.GetAsync(downloadUrl, System.Net.Http.HttpCompletionOption.ResponseHeadersRead))
+            {
+                response.EnsureSuccessStatusCode();
+                await using var source = await response.Content.ReadAsStreamAsync();
+                await using var destination = new FileStream(installerPath, FileMode.Create, FileAccess.Write, FileShare.None);
+                await source.CopyToAsync(destination);
+            }
+
+            var fileInfo = new FileInfo(installerPath);
+            if (!fileInfo.Exists || fileInfo.Length < 500_000)
+                throw new InvalidDataException("El instalador descargado parece incompleto.");
+
+            SetStatus("Descarga completada. Abriendo el instalador oficial de Npcap; sigue los pasos que aparezcan en pantalla…");
+            var startInfo = new ProcessStartInfo(installerPath)
+            {
+                UseShellExecute = true,
+                Verb = "runas",
+                Arguments = "/winpcap_mode=yes"
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process is null)
+                throw new InvalidOperationException("Windows no pudo abrir el instalador de Npcap.");
+
+            await process.WaitForExitAsync();
+
+            if (IsNpcapInstalled())
+            {
+                SetStatus(process.ExitCode == 3010
+                    ? "Npcap se instaló, pero Windows necesita reiniciarse antes de usar la captura de tráfico."
+                    : "Npcap está instalado. Continuando con la búsqueda de dispositivos…");
+                return true;
+            }
+
+            SetStatus(process.ExitCode == 1
+                ? "Instalación de Npcap cancelada. Puedes volver a buscar dispositivos cuando quieras."
+                : $"El instalador terminó, pero no se detectó el servicio Npcap (código {process.ExitCode}).");
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            SetStatus("Se canceló el permiso de Windows para instalar Npcap.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            SetStatus("No se pudo descargar o instalar Npcap: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            // Keep the installer in the app's local data folder for diagnostics/retry.
+            // It is not embedded in or redistributed with MarkHotspot.
+        }
     }
 
     private void StartTrafficCapture()
