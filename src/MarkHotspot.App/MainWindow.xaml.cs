@@ -303,13 +303,11 @@ public partial class MainWindow : Window
                 row.Ip = device.Ip;
                 var ping = await PingDeviceAsync(device.Ip);
                 row.State = connectedMacs.Contains(mac) || ping ? "Conectado" : "Desconectado";
-                if (_settings.Blacklist.Any(b => !string.IsNullOrWhiteSpace(b.Mac) && b.Mac.Equals(mac, StringComparison.OrdinalIgnoreCase)))
-                    row.State += " · Lista negra";
             }
 
             foreach (var row in _devices)
                 if (!found.ContainsKey(row.Mac) && !connectedMacs.Contains(row.Mac))
-                    row.State = "Desconectado" + (_settings.Blacklist.Any(b => b.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase)) ? " · Lista negra" : "");
+                    row.State = "Desconectado";
 
             var ordered = _devices.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
             _devices.Clear();
@@ -598,7 +596,7 @@ public partial class MainWindow : Window
         public DeviceRow(string ip, string mac, string state) { _ip = ip; Mac = mac; _name = "Dispositivo " + mac[^5..].Replace(":", ""); _state = state; }
         public string Ip { get => _ip; set { _ip = value; OnPropertyChanged(); } }
         public string Mac { get; }
-        public string Name { get => _name; set { _name = value; OnPropertyChanged(); } }
+        public string Name { get => _name; set { _name = value; OnPropertyChanged(); OnPropertyChanged(nameof(DeviceIcon)); } }
         public string DeviceIcon => DetectDeviceIcon(Name);
         public string State { get => _state; set { _state = value; OnPropertyChanged(); } }
         public string TrafficText { get => _trafficText; set { _trafficText = value; OnPropertyChanged(); } }
