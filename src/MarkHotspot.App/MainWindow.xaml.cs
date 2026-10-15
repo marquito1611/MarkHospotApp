@@ -162,6 +162,7 @@ public partial class MainWindow : Window
             PasswordVisibleBox.Text = PasswordBox.Password;
             PasswordBox.Visibility = Visibility.Collapsed;
             PasswordVisibleBox.Visibility = Visibility.Visible;
+            PasswordEyeSlashPath.Visibility = Visibility.Visible;
             PasswordVisibleBox.Focus();
             PasswordVisibleBox.CaretIndex = PasswordVisibleBox.Text.Length;
         }
@@ -169,6 +170,7 @@ public partial class MainWindow : Window
         {
             PasswordBox.Password = PasswordVisibleBox.Text;
             PasswordVisibleBox.Visibility = Visibility.Collapsed;
+            PasswordEyeSlashPath.Visibility = Visibility.Collapsed;
             PasswordBox.Visibility = Visibility.Visible;
             PasswordBox.Focus();
         }
