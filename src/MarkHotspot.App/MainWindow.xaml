@@ -142,6 +142,7 @@
                             <TextBlock x:Name="InstalledVersionText" Text="Versión instalada" Foreground="{DynamicResource MutedBrush}" FontSize="12" Margin="0,0,0,12"/>
                             <Button x:Name="CheckForUpdatesButton" Content="Buscar actualizaciones" Click="CheckForUpdatesButton_Click" HorizontalAlignment="Left"/>
                             <TextBlock x:Name="UpdateStatusText" Text="Comprueba si hay una versión estable nueva en GitHub Releases." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="UpdateReleaseInfoText" Text="" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" MaxHeight="180" Margin="0,8,0,0"/>
                             <StackPanel x:Name="UpdateProgressPanel" Visibility="Collapsed" Margin="0,16,0,0">
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
