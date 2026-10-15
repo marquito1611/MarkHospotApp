@@ -30,9 +30,9 @@ jobs:
       - name: Restore
         run: dotnet restore MarkHotspot.sln
       - name: Build Release x64
-        run: dotnet build MarkHotspot.sln --configuration Release --no-restore -p:Platform=x64
+        run: dotnet build MarkHotspot.sln --configuration Release --no-restore -p:Platform=x64 -p:Version=1.0.0.${{ github.run_number }}
       - name: Publish self-contained x64
-        run: dotnet publish src/MarkHotspot.App/MarkHotspot.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/MarkHotspot
+        run: dotnet publish src/MarkHotspot.App/MarkHotspot.App.csproj --configuration Release --runtime win-x64 --self-contained true -p:Platform=x64 -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:Version=1.0.0.${{ github.run_number }} --output artifacts/MarkHotspot
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
