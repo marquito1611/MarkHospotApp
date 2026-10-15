@@ -8,6 +8,7 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#3B82F6"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#9AA4B2"/>
         <SolidColorBrush x:Key="MainTextBrush" Color="#F4F6FA"/>
+
         <Style x:Key="ThemeSwitchStyle" TargetType="ToggleButton">
             <Setter Property="Width" Value="48"/>
             <Setter Property="Height" Value="26"/>
@@ -35,6 +36,7 @@
                 </Setter.Value>
             </Setter>
         </Style>
+
         <Style TargetType="TextBox">
             <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource MainTextBrush}"/>
@@ -47,15 +49,75 @@
             <Setter Property="BorderBrush" Value="{StaticResource MutedBrush}"/>
             <Setter Property="CaretBrush" Value="{StaticResource MainTextBrush}"/>
         </Style>
-        <Style x:Key="NavButtonStyle" TargetType="Button"><Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource MutedBrush}"/><Setter Property="Padding" Value="12"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/></Style>
+
+        <!-- Rounded navigation pills used throughout the left sidebar. -->
+        <Style x:Key="NavButtonStyle" TargetType="Button">
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="Padding" Value="14,12"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="15" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="#263244"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.78"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.45"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Global rounded button style: applies to every page, dialogs-in-window,
+             device actions, traffic controls, settings and the sidebar. -->
         <Style TargetType="Button">
-            <Setter Property="Padding" Value="14,9"/>
+            <Setter Property="Padding" Value="16,10"/>
             <Setter Property="Margin" Value="0,0,8,0"/>
             <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
             <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}"
+                                CornerRadius="16" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.88"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.72"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Application.Resources>
 </Application>
