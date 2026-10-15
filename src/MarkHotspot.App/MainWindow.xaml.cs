@@ -1008,7 +1008,6 @@ public partial class MainWindow : Window
                 .OrderByDescending(n => n.Status == "Up").ThenBy(n => n.Name).ToList();
             _adapters.Clear();
             foreach (var row in rows) _adapters.Add(row);
-            AdapterCountText.Text = rows.Count.ToString();
         }
         catch (Exception ex) { SetStatus("Error de diagnóstico de red: " + ex.Message); }
         return Task.CompletedTask;
