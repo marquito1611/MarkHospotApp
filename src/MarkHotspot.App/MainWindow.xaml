@@ -104,6 +104,25 @@
                             <TextBox x:Name="SettingsSsidBox" Padding="8" Margin="0,0,0,12" Text="MarkHotspot"/>
                             <TextBlock Text="Contraseña" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,5"/>
                             <TextBlock Text="Guarda aquí el nombre de red. Para cambiar la contraseña, usa el campo del Panel principal." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="0,0,0,12"/><Button Content="Guardar nombre de red" Click="SaveSettingsButton_Click" HorizontalAlignment="Left"/>
+                    </StackPanel>
+                    </Border>
+                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="Temas" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <TextBlock Text="Elige la apariencia de MarkHotspot. Solo puede estar activo un tema a la vez." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,18"/>
+                            <Grid Margin="0,0,0,14">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel><TextBlock Text="Claro" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="Fondo blanco y detalles azules" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
+                                <ToggleButton x:Name="LightThemeToggle" Grid.Column="1" Style="{StaticResource ThemeSwitchStyle}" VerticalAlignment="Center" Checked="LightThemeToggle_Checked" Unchecked="LightThemeToggle_Unchecked"/>
+                            </Grid>
+                            <Separator Margin="0,0,0,14"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <StackPanel><TextBlock Text="Oscuro" FontSize="16" FontWeight="SemiBold"/><TextBlock Text="Colores oscuros actuales" Foreground="{StaticResource MutedBrush}" FontSize="12" Margin="0,3,0,0"/></StackPanel>
+                                <ToggleButton x:Name="DarkThemeToggle" Grid.Column="1" Style="{StaticResource ThemeSwitchStyle}" VerticalAlignment="Center" Checked="DarkThemeToggle_Checked" Unchecked="DarkThemeToggle_Unchecked"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
                         </StackPanel>
                     </Border>
                 </StackPanel>
