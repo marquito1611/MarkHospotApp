@@ -445,14 +445,14 @@ public partial class MainWindow : Window
         {
             // Automatic scans must never launch an installer repeatedly.
             if (!IsNpcapInstalled())
-                SetStatus("Detectando dispositivos automáticamente. Sin Npcap, la detección por ARP puede ser limitada.");
+                DeviceScanStatusText.Text = "Sin Npcap, la detección por ARP puede ser limitada.";
 
-            SetStatus("Actualizando automáticamente los dispositivos conectados…");
+            DeviceScanStatusText.Text = "Actualizando dispositivos conectados…";
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
             if (hotspotAddresses.Count == 0)
             {
                 DevicesCountText.Text = _devices.Count.ToString();
-                SetStatus("No se encontró la interfaz local del hotspot. Inicia el hotspot de Windows y vuelve a buscar.");
+                DeviceScanStatusText.Text = "Windows no expone todavía la interfaz local del hotspot. La búsqueda automática volverá a intentarlo.";
                 return;
             }
 
@@ -500,9 +500,9 @@ public partial class MainWindow : Window
             SyncTrafficLimitRows();
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
-            SetStatus(_captureStarted ? $"Detección automática activa: {_devices.Count} dispositivos en la lista. Tráfico en vivo activo." : $"Detección automática actualizada: {_devices.Count} dispositivos en la lista. La captura de tráfico requiere Npcap.");
+            DeviceScanStatusText.Text = _captureStarted ? $"Detección automática activa: {_devices.Count} dispositivos. Tráfico en vivo activo." : $"Detección automática actualizada: {_devices.Count} dispositivos. La captura de tráfico requiere Npcap.";
         }
-        catch (Exception ex) { SetStatus("Error en la detección automática: " + ex.Message); }
+        catch (Exception ex) { DeviceScanStatusText.Text = "Error en la detección automática: " + ex.Message; }
         finally
         {
             _deviceScanInProgress = false;
@@ -751,9 +751,11 @@ public partial class MainWindow : Window
             if (nic.OperationalStatus != OperationalStatus.Up) continue;
             var name = nic.Name;
             var description = nic.Description;
-            var looksLikeHotspot = name.Contains("Local Area Connection*", StringComparison.OrdinalIgnoreCase)
+            var looksLikeHotspot = name.Contains("Local Area Connection", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Conexión de área local", StringComparison.OrdinalIgnoreCase)
                 || name.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase)
                 || description.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase)
+                || description.Contains("Microsoft Wi-Fi Direct", StringComparison.OrdinalIgnoreCase)
                 || description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase);
             foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
             {
@@ -1005,20 +1007,18 @@ public partial class MainWindow : Window
     private async Task StartModernHotspotOnLaunchAsync()
     {
         HotspotStateText.Text = "Activando Hotspot…";
-        HotspotDetailText.Text = "Comprobando el estado del Mobile Hotspot de Windows…";
-        var state = await GetModernHotspotStateAsync();
-        if (state == TetheringOperationalState.On)
-        {
-            HotspotStateText.Text = "Hotspot Activo";
-            HotspotDetailText.Text = "Windows confirma que el Mobile Hotspot está activo.";
-            return;
-        }
-
-        HotspotStateText.Text = "Activando Hotspot…";
+        HotspotDetailText.Text = "Aplicando el nombre y la contraseña guardados en MarkHotspot…";
         var result = await StartModernHotspotAsync();
         HotspotDetailText.Text = result.Message;
-        if (result.Success) await ConfirmHotspotStateAsync();
-        else HotspotStateText.Text = "Hotspot Detenido";
+        if (result.Success)
+        {
+            HotspotStateText.Text = "Hotspot Activo";
+            await RefreshAdaptersAsync();
+        }
+        else
+        {
+            HotspotStateText.Text = "Hotspot Detenido";
+        }
     }
 
     private async Task<(bool Success, string Message)> StartModernHotspotAsync()
@@ -1027,14 +1027,41 @@ public partial class MainWindow : Window
         _hotspotOperationInProgress = true;
         try
         {
-            HotspotStateText.Text = "Activando Hotspot…";
+            var ssid = _settings.Ssid?.Trim() ?? "";
+            var password = _settings.Password ?? "";
+            if (ssid.Length is < 1 or > 32)
+                return (false, "El nombre Wi-Fi debe tener entre 1 y 32 caracteres.");
+            if (password.Length is < 8 or > 63)
+                return (false, "La contraseña Wi-Fi debe tener entre 8 y 63 caracteres.");
+
             var profile = NetworkInformation.GetInternetConnectionProfile();
             if (profile is null)
                 return (false, "Windows no tiene un perfil de conexión a Internet disponible. Conecta primero la PC a Internet.");
 
             var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
+
+            // Windows Mobile Hotspot otherwise keeps its own saved SSID/passphrase
+            // (often a DESKTOP-* name and an automatically generated password).
+            // Stop it before applying the credentials supplied in MarkHotspot.
             if (manager.TetheringOperationalState == TetheringOperationalState.On)
-                return (true, "Windows confirma que el Mobile Hotspot está activo.");
+            {
+                var stopResult = await manager.StopTetheringAsync();
+                if (stopResult.Status != TetheringOperationStatus.Success)
+                    return (false, "No se pudo detener el hotspot existente para aplicar el nombre y la contraseña de MarkHotspot: " + stopResult.AdditionalErrorMessage);
+
+                var stopped = await WaitForHotspotStateAsync(TetheringOperationalState.Off, TimeSpan.FromSeconds(20));
+                if (!stopped)
+                    return (false, "Windows no confirmó que el hotspot anterior se detuviera para cambiar sus credenciales.");
+            }
+
+            var configuration = new NetworkOperatorTetheringAccessPointConfiguration
+            {
+                Ssid = ssid,
+                Passphrase = password
+            };
+            var configureResult = await manager.ConfigureAccessPointAsync(configuration);
+            if (configureResult.Status != TetheringOperationStatus.Success)
+                return (false, "Windows no permitió aplicar el nombre y la contraseña configurados en MarkHotspot: " + configureResult.AdditionalErrorMessage);
 
             var result = await manager.StartTetheringAsync();
             if (result.Status != TetheringOperationStatus.Success)
@@ -1042,12 +1069,12 @@ public partial class MainWindow : Window
 
             var confirmed = await WaitForHotspotStateAsync(TetheringOperationalState.On, TimeSpan.FromSeconds(25));
             return confirmed
-                ? (true, "Windows confirma que el Mobile Hotspot está activo.")
+                ? (true, $"Hotspot activo con el nombre «{ssid}» y la contraseña configurada en MarkHotspot.")
                 : (false, "Windows aceptó la solicitud, pero no confirmó que el Mobile Hotspot esté activo.");
         }
         catch (Exception ex)
         {
-            return (false, "No se pudo consultar o activar el Mobile Hotspot moderno de Windows: " + ex.Message);
+            return (false, "No se pudo configurar o activar el Mobile Hotspot de Windows: " + ex.Message);
         }
         finally { _hotspotOperationInProgress = false; }
     }
