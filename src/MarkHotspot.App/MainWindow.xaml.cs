@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+    private readonly DispatcherTimer _activationTimer = new() { Interval = TimeSpan.FromMilliseconds(500) };
     private ICaptureDevice? _captureDevice;
     private bool _captureStarted;
     private readonly string _dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MarkHotspot");
@@ -50,6 +51,12 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        _activationTimer.Tick += (_, _) =>
+        {
+            if (App.ActivationSignal?.WaitOne(0) == true)
+                ShowFromTray();
+        };
+        _activationTimer.Start();
         SourceInitialized += (_, _) => ApplyNativeTitleBarTheme(_settings.IsDarkTheme);
         _startMinimized = Environment.GetCommandLineArgs().Skip(1)
             .Any(arg => string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase));
@@ -89,6 +96,7 @@ public partial class MainWindow : Window
         {
             NetworkChange.NetworkAddressChanged -= NetworkChange_NetworkAddressChanged;
             NetworkChange.NetworkAvailabilityChanged -= NetworkChange_NetworkAvailabilityChanged;
+            _activationTimer.Stop();
             _trafficTimer.Stop();
             _hotspotStateTimer.Stop();
             _deviceDiscoveryTimer.Stop();
