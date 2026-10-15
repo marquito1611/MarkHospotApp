@@ -1,11 +1,10 @@
-name: Publish latest Windows build to Releases
+name: Publish Windows build to Releases
 
 on:
-  push:
-    paths:
-      - '.github/workflows/publish-latest-release.yml'
-    branches:
-      - main
+  workflow_run:
+    workflows: ["Windows x64 build"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
@@ -13,14 +12,15 @@ permissions:
 
 jobs:
   publish:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Download latest successful Windows build artifact
+      - name: Download artifact from completed build
         uses: actions/download-artifact@v4
         with:
           name: MarkHotspot-win-x64
           path: ./artifact
-          run-id: 38706524684
+          run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Find executable
         id: exe
@@ -33,14 +33,13 @@ jobs:
             exit 1
           fi
           echo "path=$exe" >> "$GITHUB_OUTPUT"
-          echo "name=$(basename "$exe")" >> "$GITHUB_OUTPUT"
-      - name: Publish GitHub Release
+      - name: Publish versioned GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.0-build10
-          name: MarkHotspot Windows x64 — Build 10
+          tag_name: v1.0.0-build${{ github.event.workflow_run.run_number }}
+          name: MarkHotspot Windows x64 — Build ${{ github.event.workflow_run.run_number }}
           body: |
-            Latest successful Windows x64 build from workflow run #10.
-            Commit: 3f3540dca9e361203c6489c33fa24dfa41e92a2e
+            Automatically published from successful Windows x64 build #${{ github.event.workflow_run.run_number }}.
+            Commit: ${{ github.event.workflow_run.head_sha }}
           files: ${{ steps.exe.outputs.path }}
           fail_on_unmatched_files: true
