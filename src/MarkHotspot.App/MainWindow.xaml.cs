@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 
 namespace MarkHotspot;
 
@@ -428,7 +430,29 @@ public partial class MainWindow : Window
 
     private void SetStatus(string message) => HotspotDetailText.Text = message;
     public sealed record AdapterRow(string Name, string Type, string Status, string Speed);
-    public sealed record DeviceRow(string Ip, string Mac, string State);
+    public sealed class DeviceRow : INotifyPropertyChanged
+    {
+        private string _ip;
+        private string _name;
+        private string _state;
+        private string _trafficText = "↑ —   ↓ —";
+        public DeviceRow(string ip, string mac, string state) { _ip = ip; Mac = mac; _name = "Dispositivo " + mac[^5..].Replace(":", ""); _state = state; }
+        public string Ip { get => _ip; set { _ip = value; OnPropertyChanged(); } }
+        public string Mac { get; }
+        public string Name { get => _name; set { _name = value; OnPropertyChanged(); } }
+        public string DeviceIcon => DetectDeviceIcon(Name);
+        public string State { get => _state; set { _state = value; OnPropertyChanged(); } }
+        public string TrafficText { get => _trafficText; set { _trafficText = value; OnPropertyChanged(); } }
+        public event PropertyChangedEventHandler? PropertyChanged;
+        private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+    }
+    private static string DetectDeviceIcon(string name)
+    {
+        var n = name.ToLowerInvariant();
+        if (new[] { "iphone", "ipad", "android", "galaxy", "samsung", "pixel", "huawei", "xiaomi", "redmi", "oppo", "phone", "mobile", "a17", "a16" }.Any(n.Contains)) return "📱";
+        if (new[] { "windows", "desktop", "laptop", "computer", "macbook", "imac", "lenovo", "dell", "hp-", "asus", "acer", "surface" }.Any(n.Contains)) return "🖥";
+        return "▣";
+    }
     public sealed record BlockedDeviceRow(string Ip, string Mac, string AddedAt);
     private sealed class AppSettings
     {
