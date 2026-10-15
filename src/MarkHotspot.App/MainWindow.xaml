@@ -65,7 +65,7 @@
                         <ListView x:Name="AdaptersList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="150" MaxHeight="220">
                             <ListView.View><GridView><GridViewColumn Header="Nombre" DisplayMemberBinding="{Binding Name}" Width="230"/><GridViewColumn Header="Tipo" DisplayMemberBinding="{Binding Type}" Width="120"/><GridViewColumn Header="Estado" DisplayMemberBinding="{Binding Status}" Width="100"/><GridViewColumn Header="Velocidad" DisplayMemberBinding="{Binding Speed}" Width="110"/></GridView></ListView.View>
                         </ListView>
-                        <TextBlock Text="El inicio del punto de acceso usa Hosted Network heredado. El control de tráfico por dispositivo y el bloqueo efectivo del tráfico reenviado todavía requieren un motor de filtrado compatible y pruebas en Windows." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
+                        <TextBlock Text="El estado Bloqueado se muestra junto al dispositivo seleccionado. El bloqueo del tráfico reenviado debe confirmarse con el motor de filtrado del sistema; las reglas estándar de Firewall por sí solas no garantizan ese bloqueo." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,14,0,0"/>
                     </StackPanel>
                 </Border>
 
@@ -116,17 +116,7 @@
                 
                 <Separator Margin="0,18,0,18"/>
 
-                    <TextBlock Visibility="Collapsed" Text="Dispositivos bloqueados" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Visibility="Collapsed" Text="Dispositivos guardados para bloquear" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
-                        <StackPanel>
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Lista negra" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Se guarda en la configuración local. Las reglas de Firewall del equipo no garantizan bloquear el tráfico reenviado del hotspot." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><TextBlock Grid.Column="1" x:Name="BlacklistCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0"/></Grid>
-                        <ListView x:Name="BlacklistList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="100" MaxHeight="200">
-                            <ListView.View><GridView><GridViewColumn Header="Dirección IP" DisplayMemberBinding="{Binding Ip}" Width="150"/><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Añadido" DisplayMemberBinding="{Binding AddedAt}" Width="150"/></GridView></ListView.View>
-                        </ListView>
-                        <WrapPanel Margin="0,10,0,0"><Button x:Name="RemoveFromBlacklistButton" Content="Quitar de lista negra" /></WrapPanel>
-                        </StackPanel>
-                    </Border>
+                    
 
                 
             </StackPanel>
