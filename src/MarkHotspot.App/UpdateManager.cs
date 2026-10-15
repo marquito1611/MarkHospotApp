@@ -31,16 +31,16 @@ public partial class MainWindow
     private static Version GetInstalledAssemblyVersion() =>
         System.Reflection.Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(1, 0, 0, 0);
 
-    private static int GetInstalledBuildNumber()
+    private static Version GetComparableInstalledVersion()
     {
         var version = GetInstalledAssemblyVersion();
-        return version.Revision >= 0 ? version.Revision : Math.Max(0, version.Build);
+        return new Version(Math.Max(0, version.Major), Math.Max(0, version.Minor), Math.Max(0, version.Build));
     }
 
     private static string GetInstalledVersionLabel()
     {
-        var build = GetInstalledBuildNumber();
-        return build > 0 ? "v1.0.0-build" + build : "versión " + GetInstalledAssemblyVersion();
+        var version = GetComparableInstalledVersion();
+        return $"v{version.Major}.{version.Minor}.{version.Build}-Public_Release";
     }
 
     private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e)
@@ -77,17 +77,21 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(tag))
                 throw new InvalidDataException("GitHub no devolvió una etiqueta de versión válida.");
 
-            var buildMatch = Regex.Match(tag, @"build([0-9]+)$", RegexOptions.IgnoreCase);
-            if (!buildMatch.Success || !int.TryParse(buildMatch.Groups[1].Value, out var latestBuild))
-                throw new InvalidDataException("La publicación más reciente no tiene el formato esperado (v1.0.0-buildN).");
+            var versionMatch = Regex.Match(tag, @"^v(\\d+)\\.(\\d+)\\.(\\d+)-Public_Release$", RegexOptions.IgnoreCase);
+            if (!versionMatch.Success ||
+                !int.TryParse(versionMatch.Groups[1].Value, out var latestMajor) ||
+                !int.TryParse(versionMatch.Groups[2].Value, out var latestMinor) ||
+                !int.TryParse(versionMatch.Groups[3].Value, out var latestPatch))
+                throw new InvalidDataException("La publicación más reciente no tiene el formato esperado (vX.Y.Z-Public_Release).");
+            var latestVersion = new Version(latestMajor, latestMinor, latestPatch);
 
             if ((release.TryGetProperty("draft", out var draft) && draft.GetBoolean()) ||
                 (release.TryGetProperty("prerelease", out var prerelease) && prerelease.GetBoolean()))
                 throw new InvalidDataException("La publicación encontrada no es una versión estable.");
 
-            if (latestBuild <= GetInstalledBuildNumber())
+            if (latestVersion <= GetComparableInstalledVersion())
             {
-                UpdateStatusText.Text = "Ya tienes la última versión estable (" + tag + ").";
+                UpdateStatusText.Text = "Ya tienes la última versión estable (" + GetInstalledVersionLabel() + ").";
                 UpdateReleaseInfoText.Text = "No se ha descargado ningún archivo.";
                 return;
             }
