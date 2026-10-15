@@ -7,6 +7,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>MarkHotspot</AssemblyName>
+    <ApplicationIcon>Assets\MarkHotspotApp.ico</ApplicationIcon>
     <RootNamespace>MarkHotspot</RootNamespace>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
@@ -14,4 +15,7 @@
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
   </PropertyGroup>
+  <ItemGroup>
+    <Resource Include="Assets\MarkHotspotApp.ico" />
+  </ItemGroup>
 </Project>
