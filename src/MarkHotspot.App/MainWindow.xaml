@@ -16,11 +16,10 @@
                 <StackPanel>
                     <Button x:Name="HomeNavButton" Content="◉   Panel principal" Style="{StaticResource NavButtonStyle}" Click="HomeNav_Click"/>
                     <Button x:Name="DevicesNavButton" Content="▦   Dispositivos" Style="{StaticResource NavButtonStyle}" Click="DevicesNav_Click"/>
-                    <Button x:Name="TrafficNavButton" Content="⇅   Control de tráfico" Style="{StaticResource NavButtonStyle}" Click="TrafficNav_Click"/>
-                    <Button x:Name="BlacklistNavButton" Content="⊘   Lista negra" Style="{StaticResource NavButtonStyle}" Click="BlacklistNav_Click"/>
                     <Button x:Name="SettingsNavButton" Content="⚙   Configuración" Style="{StaticResource NavButtonStyle}" Click="SettingsNav_Click"/>
+                    <Button x:Name="AboutNavButton" Content="ⓘ   Acerca de" Style="{StaticResource NavButtonStyle}" Click="AboutNav_Click"/>
                 </StackPanel>
-                <StackPanel DockPanel.Dock="Bottom"><Separator Margin="0,12"/><TextBlock Text="MarkHotspot" FontWeight="SemiBold"/><TextBlock Text="Creada por GitHub: @marquito1611" FontSize="11" Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/></StackPanel>
+                
             </DockPanel>
         </Border>
         <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
@@ -68,22 +67,8 @@
                         </StackPanel>
                     </Border>
 
-                </StackPanel>
-                <StackPanel x:Name="BlacklistPage" Visibility="Collapsed">
-                    <TextBlock Text="Lista negra" FontSize="28" FontWeight="Bold"/>
-                    <TextBlock Text="Dispositivos guardados para bloquear" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
-                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
-                        <StackPanel>
-                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Lista negra" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Se guarda en la configuración local. Las reglas de Firewall del equipo no garantizan bloquear el tráfico reenviado del hotspot." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><TextBlock Grid.Column="1" x:Name="BlacklistCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0"/></Grid>
-                        <ListView x:Name="BlacklistList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="100" MaxHeight="200">
-                            <ListView.View><GridView><GridViewColumn Header="Dirección IP" DisplayMemberBinding="{Binding Ip}" Width="150"/><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Añadido" DisplayMemberBinding="{Binding AddedAt}" Width="150"/></GridView></ListView.View>
-                        </ListView>
-                        <WrapPanel Margin="0,10,0,0"><Button x:Name="RemoveFromBlacklistButton" Content="Quitar de lista negra" Click="RemoveFromBlacklistButton_Click"/></WrapPanel>
-                        </StackPanel>
-                    </Border>
+                                <Separator Margin="0,18,0,18"/>
 
-                </StackPanel>
-                <StackPanel x:Name="TrafficPage" Visibility="Collapsed">
                     <TextBlock Text="Control de tráfico" FontSize="28" FontWeight="Bold"/>
                     <TextBlock Text="Límites independientes de descarga y subida por dispositivo" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,18"/>
                     <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="18" Margin="0,0,0,14">
@@ -112,6 +97,40 @@
                         </DataTemplate></ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <Border Background="{StaticResource PanelBrush}" CornerRadius="14" Padding="16" Margin="0,0,0,12"><StackPanel><TextBlock Text="Estado del motor de limitación" FontSize="16" FontWeight="SemiBold"/><TextBlock x:Name="TrafficEngineStatusText" Text="Motor de shaping por cliente pendiente de integración." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0"/></StackPanel></Border>
+                
+                <Separator Margin="0,18,0,18"/>
+
+                    <TextBlock Text="Dispositivos bloqueados" FontSize="28" FontWeight="Bold"/>
+                    <TextBlock Text="Dispositivos guardados para bloquear" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
+                    <Border Background="{StaticResource PanelBrush}" CornerRadius="16" Padding="20" Margin="0,0,0,16">
+                        <StackPanel>
+                        <Grid Margin="0,0,0,12"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><StackPanel><TextBlock Text="Lista negra" FontSize="18" FontWeight="SemiBold"/><TextBlock Text="Se guarda en la configuración local. Las reglas de Firewall del equipo no garantizan bloquear el tráfico reenviado del hotspot." Foreground="{StaticResource MutedBrush}" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"/></StackPanel><TextBlock Grid.Column="1" x:Name="BlacklistCountText" Text="0" FontWeight="Bold" VerticalAlignment="Center" Margin="12,0,0,0"/></Grid>
+                        <ListView x:Name="BlacklistList" Background="Transparent" BorderThickness="0" Foreground="{StaticResource MainTextBrush}" MinHeight="100" MaxHeight="200">
+                            <ListView.View><GridView><GridViewColumn Header="Dirección IP" DisplayMemberBinding="{Binding Ip}" Width="150"/><GridViewColumn Header="Dirección MAC" DisplayMemberBinding="{Binding Mac}" Width="190"/><GridViewColumn Header="Añadido" DisplayMemberBinding="{Binding AddedAt}" Width="150"/></GridView></ListView.View>
+                        </ListView>
+                        <WrapPanel Margin="0,10,0,0"><Button x:Name="RemoveFromBlacklistButton" Content="Quitar de lista negra" Click="RemoveFromBlacklistButton_Click"/></WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                
+            </StackPanel>
+                
+                
+                <StackPanel x:Name="AboutPage" Visibility="Collapsed">
+                    <TextBlock Text="Acerca de" FontSize="28" FontWeight="Bold"/>
+                    <TextBlock Text="Información de MarkHotspot" Foreground="{StaticResource MutedBrush}" Margin="0,5,0,22"/>
+                    <Border Background="{StaticResource PanelBrush}" CornerRadius="18" Padding="24" Margin="0,0,0,16">
+                        <StackPanel>
+                            <TextBlock Text="MARK" FontSize="13" FontWeight="Bold" Foreground="{StaticResource AccentBrush}"/>
+                            <TextBlock Text="MarkHotspot" FontSize="30" FontWeight="Bold" Margin="0,4,0,8"/>
+                            <TextBlock Text="Herramienta para administrar el punto de acceso Wi-Fi, ver dispositivos conectados y configurar controles de tráfico desde una interfaz sencilla." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" FontSize="14"/>
+                            <Separator Margin="0,20,0,16"/>
+                            <TextBlock Text="Creada por" Foreground="{StaticResource MutedBrush}" FontSize="12"/>
+                            <TextBlock Text="  @marquito1611" FontSize="18" FontWeight="SemiBold" Margin="0,5,0,0"/>
+                            <TextBlock Text="GitHub" Foreground="{StaticResource AccentBrush}" Margin="0,3,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="Nota: las funciones de bloqueo y limitación real dependen de la integración y validación del motor de filtrado de Windows." TextWrapping="Wrap" Foreground="{StaticResource MutedBrush}" Margin="2,0,2,0"/>
                 </StackPanel>
                 <StackPanel x:Name="SettingsPage" Visibility="Collapsed">
                     <TextBlock Text="Configuración" FontSize="28" FontWeight="Bold"/>
