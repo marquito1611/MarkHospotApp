@@ -18,6 +18,7 @@ public partial class MainWindow : Window
     private readonly string _dataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MarkHotspot");
     private readonly string _settingsPath;
     private AppSettings _settings = new();
+    private bool _changingTheme;
 
     public MainWindow()
     {
@@ -27,6 +28,11 @@ public partial class MainWindow : Window
         DevicesList.ItemsSource = _devices;
         BlacklistList.ItemsSource = _blockedDevices;
         LoadSettings();
+        _changingTheme = true;
+        DarkThemeToggle.IsChecked = _settings.IsDarkTheme;
+        LightThemeToggle.IsChecked = !_settings.IsDarkTheme;
+        _changingTheme = false;
+        ApplyTheme(_settings.IsDarkTheme);
         SsidBox.Text = _settings.Ssid;
         SettingsSsidBox.Text = _settings.Ssid;
         PasswordBox.Password = _settings.Password;
@@ -50,6 +56,55 @@ public partial class MainWindow : Window
         BlacklistPage.Visibility = Visibility.Collapsed;
         SettingsPage.Visibility = Visibility.Collapsed;
         page.Visibility = Visibility.Visible;
+    }
+
+    private void LightThemeToggle_Checked(object sender, RoutedEventArgs e) => SetTheme(false);
+    private void DarkThemeToggle_Checked(object sender, RoutedEventArgs e) => SetTheme(true);
+
+    private void LightThemeToggle_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (_changingTheme || DarkThemeToggle.IsChecked == true) return;
+        _changingTheme = true;
+        LightThemeToggle.IsChecked = true;
+        _changingTheme = false;
+        SetTheme(false);
+    }
+
+    private void DarkThemeToggle_Unchecked(object sender, RoutedEventArgs e)
+    {
+        if (_changingTheme || LightThemeToggle.IsChecked == true) return;
+        _changingTheme = true;
+        DarkThemeToggle.IsChecked = true;
+        _changingTheme = false;
+        SetTheme(true);
+    }
+
+    private void SetTheme(bool dark)
+    {
+        if (_changingTheme) return;
+        _changingTheme = true;
+        if (dark) LightThemeToggle.IsChecked = false;
+        else DarkThemeToggle.IsChecked = false;
+        _settings.IsDarkTheme = dark;
+        ApplyTheme(dark);
+        try { SaveSettings(); }
+        catch (Exception ex) { SetStatus("No se pudo guardar el tema: " + ex.Message); }
+        _changingTheme = false;
+    }
+
+    private static void ApplyTheme(bool dark)
+    {
+        SetBrushColor("BackgroundBrush", dark ? "#101319" : "#F3F6FB");
+        SetBrushColor("PanelBrush", dark ? "#191E27" : "#FFFFFF");
+        SetBrushColor("AccentBrush", dark ? "#3B82F6" : "#2563EB");
+        SetBrushColor("MutedBrush", dark ? "#9AA4B2" : "#5B6472");
+        SetBrushColor("MainTextBrush", dark ? "#F4F6FA" : "#172033");
+    }
+
+    private static void SetBrushColor(string key, string hex)
+    {
+        if (Application.Current.Resources[key] is System.Windows.Media.SolidColorBrush brush)
+            brush.Color = (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString(hex);
     }
 
     private void DevicesNav_Click(object sender, RoutedEventArgs e) => ShowPage(DevicesPage);
