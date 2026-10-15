@@ -8,6 +8,33 @@
         <SolidColorBrush x:Key="AccentBrush" Color="#3B82F6"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#9AA4B2"/>
         <SolidColorBrush x:Key="MainTextBrush" Color="#F4F6FA"/>
+        <Style x:Key="ThemeSwitchStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="48"/>
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Track" Width="48" Height="26" CornerRadius="13" Background="{StaticResource MutedBrush}">
+                            <Grid>
+                                <Ellipse x:Name="Thumb" Width="20" Height="20" Fill="White" HorizontalAlignment="Left" Margin="3"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource AccentBrush}"/>
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
         <Style x:Key="NavButtonStyle" TargetType="Button"><Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource MutedBrush}"/><Setter Property="Padding" Value="12"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/></Style>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="14,9"/>
