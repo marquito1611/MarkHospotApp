@@ -15,6 +15,10 @@ public partial class MainWindow
 {
     private const string LatestReleaseApiUrl = "https://api.github.com/repos/marquito1611/MarkHospotApp/releases/latest";
     private static readonly HttpClient UpdateHttpClient = CreateUpdateHttpClient();
+    private CancellationTokenSource? _updateCancellation;
+    private AvailableUpdate? _availableUpdate;
+
+    private sealed record AvailableUpdate(string Tag, string DownloadUrl, long Size, string Sha256, string Notes);
 
     private static HttpClient CreateUpdateHttpClient()
     {
@@ -39,15 +43,30 @@ public partial class MainWindow
         return build > 0 ? "v1.0.0-build" + build : "versión " + GetInstalledAssemblyVersion();
     }
 
-    private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e) =>
+    private async void CheckForUpdatesButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_updateCancellation is not null)
+        {
+            _updateCancellation.Cancel();
+            return;
+        }
+
+        if (_availableUpdate is not null)
+        {
+            await DownloadAndInstallUpdateAsync(_availableUpdate);
+            return;
+        }
+
         await CheckForUpdatesAsync();
+    }
 
     private async Task CheckForUpdatesAsync()
     {
         CheckForUpdatesButton.IsEnabled = false;
+        _availableUpdate = null;
         UpdateProgressPanel.Visibility = Visibility.Collapsed;
+        UpdateReleaseInfoText.Text = string.Empty;
         UpdateStatusText.Text = "Buscando la última versión estable en GitHub…";
-        string? downloadPath = null;
         try
         {
             using var apiResponse = await UpdateHttpClient.GetAsync(LatestReleaseApiUrl, HttpCompletionOption.ResponseHeadersRead);
@@ -69,6 +88,7 @@ public partial class MainWindow
             if (latestBuild <= GetInstalledBuildNumber())
             {
                 UpdateStatusText.Text = "Ya tienes la última versión estable (" + tag + ").";
+                UpdateReleaseInfoText.Text = "No se ha descargado ningún archivo.";
                 return;
             }
 
@@ -96,23 +116,61 @@ public partial class MainWindow
             if (string.IsNullOrWhiteSpace(digest) || !digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("GitHub no proporcionó el SHA-256 de la descarga; se canceló la actualización por seguridad.");
 
-            // The progress panel stays hidden unless a newer stable release was found.
-            UpdateProgressPanel.Visibility = Visibility.Visible;
-            UpdateProgressBar.IsIndeterminate = assetSize <= 0;
-            UpdateProgressBar.Value = 0;
-            UpdatePercentText.Text = assetSize > 0 ? "0 %" : "—";
-            UpdateDownloadedText.Text = "Descargado: 0 MB de " + (assetSize > 0 ? FormatMegabytes(assetSize) : "—");
-            UpdateSpeedText.Text = "Velocidad: calculando…";
-            UpdateRemainingText.Text = "Restante: calculando…";
-            UpdateStatusText.Text = "Nueva versión " + tag + " disponible. Descargando…";
+            var notes = release.TryGetProperty("body", out var bodyElement) ? bodyElement.GetString() : null;
+            if (string.IsNullOrWhiteSpace(notes)) notes = "No se publicieron notas adicionales para esta versión.";
+            var published = release.TryGetProperty("published_at", out var publishedElement) ? publishedElement.GetString() : null;
+            var publishedLabel = DateTimeOffset.TryParse(published, out var publishedDate)
+                ? publishedDate.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                : "fecha no disponible";
 
-            downloadPath = Path.Combine(Path.GetTempPath(), "MarkHotspot-update-" + Guid.NewGuid().ToString("N") + ".exe");
-            using (var downloadResponse = await UpdateHttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead))
+            _availableUpdate = new AvailableUpdate(tag, downloadUrl!, assetSize,
+                digest.Substring("sha256:".Length), notes);
+
+            UpdateStatusText.Text = "Actualización disponible: " + tag;
+            UpdateReleaseInfoText.Text = "Publicada: " + publishedLabel + Environment.NewLine +
+                "Tamaño: " + (assetSize > 0 ? FormatMegabytes(assetSize) : "No indicado") +
+                Environment.NewLine + Environment.NewLine + notes;
+            UpdateProgressPanel.Visibility = Visibility.Collapsed;
+            CheckForUpdatesButton.Content = "Descargar e instalar";
+        }
+        catch (Exception ex)
+        {
+            UpdateStatusText.Text = "No se pudo buscar actualizaciones: " + ex.Message;
+            UpdateReleaseInfoText.Text = string.Empty;
+            _availableUpdate = null;
+            CheckForUpdatesButton.Content = "Buscar actualizaciones";
+        }
+        finally
+        {
+            CheckForUpdatesButton.IsEnabled = true;
+        }
+    }
+
+    private async Task DownloadAndInstallUpdateAsync(AvailableUpdate update)
+    {
+        var cancellation = new CancellationTokenSource();
+        _updateCancellation = cancellation;
+        string? downloadPath = Path.Combine(Path.GetTempPath(), "MarkHotspot-update-" + Guid.NewGuid().ToString("N") + ".exe");
+        CheckForUpdatesButton.Content = "Cancelar descarga";
+        CheckForUpdatesButton.IsEnabled = true;
+        UpdateProgressPanel.Visibility = Visibility.Visible;
+        UpdateProgressBar.IsIndeterminate = update.Size <= 0;
+        UpdateProgressBar.Value = 0;
+        UpdatePercentText.Text = update.Size > 0 ? "0 %" : "—";
+        UpdateDownloadedText.Text = "Descargado: 0 MB de " + (update.Size > 0 ? FormatMegabytes(update.Size) : "—");
+        UpdateSpeedText.Text = "Velocidad: calculando…";
+        UpdateRemainingText.Text = "Restante: calculando…";
+        UpdateStatusText.Text = "Descargando " + update.Tag + "…";
+
+        try
+        {
+            using (var downloadResponse = await UpdateHttpClient.GetAsync(
+                update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellation.Token))
             {
                 downloadResponse.EnsureSuccessStatusCode();
-                var totalBytes = assetSize > 0 ? assetSize : downloadResponse.Content.Headers.ContentLength ?? 0L;
+                var totalBytes = update.Size > 0 ? update.Size : downloadResponse.Content.Headers.ContentLength ?? 0L;
                 UpdateProgressBar.IsIndeterminate = totalBytes <= 0;
-                await using var input = await downloadResponse.Content.ReadAsStreamAsync();
+                await using var input = await downloadResponse.Content.ReadAsStreamAsync(cancellation.Token);
                 await using var output = new FileStream(downloadPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 131072, useAsync: true);
                 var buffer = new byte[131072];
                 long downloaded = 0;
@@ -121,9 +179,9 @@ public partial class MainWindow
                 IProgress<DownloadProgress> progress = new Progress<DownloadProgress>(UpdateDownloadProgress);
                 while (true)
                 {
-                    var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length));
+                    var read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellation.Token);
                     if (read == 0) break;
-                    await output.WriteAsync(buffer.AsMemory(0, read));
+                    await output.WriteAsync(buffer.AsMemory(0, read), cancellation.Token);
                     downloaded += read;
                     if (stopwatch.Elapsed - lastReport >= TimeSpan.FromMilliseconds(200))
                     {
@@ -131,45 +189,64 @@ public partial class MainWindow
                         lastReport = stopwatch.Elapsed;
                     }
                 }
-                await output.FlushAsync();
+                await output.FlushAsync(cancellation.Token);
                 progress.Report(new DownloadProgress(downloaded, totalBytes, downloaded / Math.Max(0.001, stopwatch.Elapsed.TotalSeconds)));
-                if (assetSize > 0 && downloaded != assetSize)
-                    throw new InvalidDataException("La descarga está incompleta: se recibieron " + FormatMegabytes(downloaded) + " de " + FormatMegabytes(assetSize) + ".");
+                if (update.Size > 0 && downloaded != update.Size)
+                    throw new InvalidDataException("La descarga está incompleta: se recibieron " + FormatMegabytes(downloaded) + " de " + FormatMegabytes(update.Size) + ".");
             }
 
+            cancellation.Token.ThrowIfCancellationRequested();
             UpdateStatusText.Text = "Descarga completa. Verificando integridad…";
             string actualHash;
             await using (var downloadedFile = File.OpenRead(downloadPath))
-                actualHash = Convert.ToHexString(await SHA256.HashDataAsync(downloadedFile));
-            var expectedHash = digest.Substring("sha256:".Length);
-            if (!actualHash.Equals(expectedHash, StringComparison.OrdinalIgnoreCase))
+                actualHash = Convert.ToHexString(await SHA256.HashDataAsync(downloadedFile, cancellation.Token));
+            if (!actualHash.Equals(update.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("El SHA-256 del archivo no coincide con el publicado por GitHub. No se instalará.");
 
-            UpdateStatusText.Text = "Actualización " + tag + " verificada. Reiniciando MarkHotspot…";
+            cancellation.Token.ThrowIfCancellationRequested();
+            UpdateStatusText.Text = "Actualización " + update.Tag + " verificada. Reiniciando MarkHotspot…";
             LaunchPortableUpdater(downloadPath);
-            downloadPath = null; // The temporary script owns cleanup after this point.
+            downloadPath = null;
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            if (downloadPath is not null) { try { if (File.Exists(downloadPath)) File.Delete(downloadPath); } catch { } }
+            _availableUpdate = null;
+            UpdateProgressPanel.Visibility = Visibility.Visible;
+            UpdateProgressBar.IsIndeterminate = false;
+            UpdateProgressBar.Value = 0;
+            UpdatePercentText.Text = "0 %";
+            UpdateDownloadedText.Text = "Descargado: 0 MB de —";
+            UpdateSpeedText.Text = "Velocidad: —";
+            UpdateRemainingText.Text = "Restante: —";
+            UpdateStatusText.Text = "Descarga cancelada. No se instaló nada.";
+            UpdateReleaseInfoText.Text = string.Empty;
+            CheckForUpdatesButton.Content = "Buscar actualizaciones";
         }
         catch (Exception ex)
         {
-            if (downloadPath is not null)
-            {
-                try { if (File.Exists(downloadPath)) File.Delete(downloadPath); } catch { }
-            }
+            if (downloadPath is not null) { try { if (File.Exists(downloadPath)) File.Delete(downloadPath); } catch { } }
             UpdateStatusText.Text = "No se pudo actualizar: " + ex.Message;
+            CheckForUpdatesButton.Content = "Buscar actualizaciones";
+            _availableUpdate = null;
         }
         finally
         {
-            CheckForUpdatesButton.IsEnabled = true;
+            cancellation.Dispose();
+            if (ReferenceEquals(_updateCancellation, cancellation)) _updateCancellation = null;
+            if (IsLoaded && CheckForUpdatesButton.IsEnabled)
+                CheckForUpdatesButton.Content = "Buscar actualizaciones";
         }
     }
 
     private void UpdateDownloadProgress(DownloadProgress progress)
     {
+        if (_updateCancellation?.IsCancellationRequested == true) return;
         UpdateProgressBar.IsIndeterminate = progress.Total <= 0;
         if (progress.Total > 0)
         {
             UpdateProgressBar.Value = Math.Clamp(progress.Downloaded * 100d / progress.Total, 0, 100);
-            UpdatePercentText.Text = UpdateProgressBar.Value.ToString("0", CultureInfo.CurrentCulture) + "%";
+            UpdatePercentText.Text = UpdateProgressBar.Value.ToString("0", CultureInfo.CurrentCulture) + " %";
         }
         else UpdatePercentText.Text = "—";
 
@@ -259,7 +336,6 @@ public partial class MainWindow
             throw;
         }
 
-        // Let the script replace the EXE only after this process exits.
         foreach (Window window in System.Windows.Application.Current.Windows)
         {
             if (window is MainWindow mainWindow)
