@@ -35,6 +35,18 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <Style TargetType="TextBox">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource MainTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource MainTextBrush}"/>
+        </Style>
+        <Style TargetType="PasswordBox">
+            <Setter Property="Background" Value="{StaticResource PanelBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource MainTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource MutedBrush}"/>
+            <Setter Property="CaretBrush" Value="{StaticResource MainTextBrush}"/>
+        </Style>
         <Style x:Key="NavButtonStyle" TargetType="Button"><Setter Property="HorizontalContentAlignment" Value="Left"/><Setter Property="Background" Value="Transparent"/><Setter Property="Foreground" Value="{StaticResource MutedBrush}"/><Setter Property="Padding" Value="12"/><Setter Property="Margin" Value="0,0,0,8"/><Setter Property="BorderThickness" Value="0"/><Setter Property="Cursor" Value="Hand"/></Style>
         <Style TargetType="Button">
             <Setter Property="Padding" Value="14,9"/>
