@@ -112,25 +112,77 @@ public partial class MainWindow : Window
         ScanDevicesButton.IsEnabled = false;
         try
         {
-            SetStatus("Actualizando la tabla de vecinos IPv4…");
-            var result = await RunNetshAsync("interface ip show neighbors");
-            var parsed = ParseNeighbors(result.Output);
-            var arp = await RunProcessAsync("arp.exe", "-a");
-            foreach (var device in ParseNeighbors(arp.Output))
-                if (!parsed.Any(d => d.Ip == device.Ip)) parsed.Add(device);
-
+            SetStatus("Buscando clientes únicamente en la red local del hotspot…");
             _devices.Clear();
-            foreach (var device in parsed.OrderBy(d => d.Ip))
+            var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
+            if (hotspotAddresses.Count == 0)
+            {
+                DevicesCountText.Text = "0";
+                SetStatus("No se encontró la interfaz local del hotspot. Inicia el hotspot de Windows y vuelve a buscar. No se mostrarán dispositivos de otras redes.");
+                return;
+            }
+
+            var found = new Dictionary<string, DeviceRow>(StringComparer.OrdinalIgnoreCase);
+            foreach (var localAddress in hotspotAddresses)
+            {
+                var result = await RunProcessAsync("arp.exe", $"-a -N {localAddress}");
+                foreach (var device in ParseNeighbors(result.Output))
+                {
+                    if (!IsInSameSubnet(localAddress, device.Ip)) continue;
+                    if (IPAddress.TryParse(device.Ip, out var ip) && ip.Equals(IPAddress.Parse(localAddress))) continue;
+                    found[device.Ip] = device;
+                }
+            }
+
+            foreach (var device in found.Values.OrderBy(d => d.Ip))
             {
                 var blocked = _settings.Blacklist.Any(b => b.Ip == device.Ip ||
                     (!string.IsNullOrWhiteSpace(device.Mac) && b.Mac.Equals(device.Mac, StringComparison.OrdinalIgnoreCase)));
                 _devices.Add(new DeviceRow(device.Ip, device.Mac, blocked ? "En lista negra" : device.State));
             }
             DevicesCountText.Text = _devices.Count.ToString();
-            SetStatus($"Escaneo terminado: {_devices.Count} vecinos detectados. Windows no siempre muestra todos los clientes Wi-Fi; esta lista se basa en la caché ARP/vecinos.");
+            SetStatus($"Escaneo terminado: {_devices.Count} direcciones encontradas dentro de la subred del hotspot. Windows solo muestra clientes que aparecen en su caché ARP; los clientes pueden tardar en aparecer.");
         }
-        catch (Exception ex) { SetStatus("Error al buscar dispositivos: " + ex.Message); }
+        catch (Exception ex) { SetStatus("Error al buscar clientes del hotspot: " + ex.Message); }
         finally { ScanDevicesButton.IsEnabled = true; }
+    }
+
+    private static IEnumerable<string> GetHotspotInterfaceAddresses()
+    {
+        foreach (var nic in NetworkInterface.GetAllNetworkInterfaces())
+        {
+            if (nic.OperationalStatus != OperationalStatus.Up) continue;
+            var name = nic.Name;
+            var description = nic.Description;
+            var looksLikeHotspot = name.Contains("Local Area Connection*", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase)
+                || description.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase)
+                || description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase);
+            foreach (var unicast in nic.GetIPProperties().UnicastAddresses)
+            {
+                if (unicast.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+                var local = unicast.Address.ToString();
+                // Windows' usual Mobile Hotspot subnet is 192.168.137.0/24.
+                if (local == "192.168.137.1" || (looksLikeHotspot && IsPrivateIPv4(local)))
+                    yield return local;
+            }
+        }
+    }
+
+    private static bool IsPrivateIPv4(string value)
+    {
+        if (!IPAddress.TryParse(value, out var address)) return false;
+        var b = address.GetAddressBytes();
+        return b[0] == 10 || (b[0] == 172 && b[1] >= 16 && b[1] <= 31) || (b[0] == 192 && b[1] == 168);
+    }
+
+    private static bool IsInSameSubnet(string localAddress, string candidateAddress)
+    {
+        if (!IPAddress.TryParse(localAddress, out var local) || !IPAddress.TryParse(candidateAddress, out var candidate)) return false;
+        var a = local.GetAddressBytes();
+        var b = candidate.GetAddressBytes();
+        // Mobile Hotspot commonly uses /24; this prevents unrelated LAN neighbors from appearing.
+        return a.Length == 4 && b.Length == 4 && a[0] == b[0] && a[1] == b[1] && a[2] == b[2];
     }
 
     private static List<DeviceRow> ParseNeighbors(string output)
