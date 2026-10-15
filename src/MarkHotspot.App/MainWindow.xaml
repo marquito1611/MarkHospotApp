@@ -1,7 +1,7 @@
 <Window x:Class="MarkHotspot.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="MarkHotspot" Height="820" Width="1160" MinHeight="680" MinWidth="940"
+        Title="MarkHotspot" Icon="Assets/MarkHotspotApp.ico" Height="820" Width="1160" MinHeight="680" MinWidth="940"
         WindowStartupLocation="CenterScreen" Background="{StaticResource BackgroundBrush}"
         Foreground="{StaticResource MainTextBrush}">
     <Grid Margin="24">
