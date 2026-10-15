@@ -1069,6 +1069,11 @@ public partial class MainWindow : Window
             if (profile is null)
                 return (false, "Windows no tiene un perfil de conexión a Internet disponible. Conecta primero la PC a Internet.");
 
+            // Stop the obsolete Hosted Network (legacy hotspot) before starting the
+            // Windows Mobile Hotspot API. Leaving both mechanisms enabled can create
+            // an extra virtual Local Area Connection alongside the modern hotspot.
+            await DisableLegacyHostedNetworkAsync();
+
             var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
 
             // Windows Mobile Hotspot otherwise keeps its own saved SSID/passphrase
@@ -1106,6 +1111,22 @@ public partial class MainWindow : Window
             return (false, "No se pudo configurar o activar el Mobile Hotspot de Windows: " + ex.Message);
         }
         finally { _hotspotOperationInProgress = false; }
+    }
+
+    private async Task DisableLegacyHostedNetworkAsync()
+    {
+        try
+        {
+            // These commands only affect the legacy WLAN Hosted Network feature.
+            // Ignore unsupported/disabled results: modern Mobile Hotspot is controlled
+            // exclusively through NetworkOperatorTetheringManager below.
+            await RunNetshAsync("wlan stop hostednetwork");
+            await RunNetshAsync("wlan set hostednetwork mode=disallow");
+        }
+        catch
+        {
+            // Older or restricted Wi-Fi drivers may not expose Hosted Network.
+        }
     }
 
     private async Task<(bool Success, string Message)> StopModernHotspotAsync()
