@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Buffers.Binary;
 using System.Net;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -83,9 +84,12 @@ internal static class WfpDeviceBlocker
         DeleteIfPresent(engine, key);
 
         var ipBytes = ip.GetAddressBytes();
+        // FWP_V4_ADDR_AND_MASK uses host-order numeric IPv4 values. Reading the
+        // address bytes as little-endian reverses the address (e.g. 192.168.137.30)
+        // and installs a filter that never matches the intended client.
         var addressMask = new FwpV4AddressAndMask
         {
-            Address = BitConverter.ToUInt32(ipBytes, 0),
+            Address = BinaryPrimitives.ReadUInt32BigEndian(ipBytes),
             Mask = uint.MaxValue
         };
         var maskPointer = Marshal.AllocHGlobal(Marshal.SizeOf<FwpV4AddressAndMask>());
@@ -101,7 +105,7 @@ internal static class WfpDeviceBlocker
                 {
                     FieldKey = addressCondition,
                     MatchType = 0, // FWP_MATCH_EQUAL
-                    ConditionValue = new FwpConditionValue { Type = 17, V4AddressMask = maskPointer } // FWP_V4_ADDR_MASK (FWP_V4_ADDR_MASK enum value is 17; 19 is FWP_RANGE_TYPE)
+                    ConditionValue = new FwpConditionValue { Type = 0x100, V4AddressMask = maskPointer } // FWP_V4_ADDR_MASK = FWP_SINGLE_DATA_TYPE_MAX + 1 (0x100)
                 },
                 new FwpmFilterCondition
                 {
