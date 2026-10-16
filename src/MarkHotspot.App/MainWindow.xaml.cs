@@ -620,20 +620,9 @@ public partial class MainWindow : Window
                 row.Ip = device.Ip;
                 _deviceMissedScans[mac] = 0;
                 var ping = await PingDeviceAsync(device.Ip);
-                if (connectedMacs.Contains(mac) || ping)
-                {
-                    row.State = "Conectado";
-                    _deviceMissedScans[mac] = 0;
-                    _deviceUnconfirmedScans[mac] = 0;
-                }
-                else
-                {
-                    _deviceUnconfirmedScans.TryGetValue(mac, out var unconfirmedScans);
-                    unconfirmedScans++;
-                    _deviceUnconfirmedScans[mac] = unconfirmedScans;
-                    if (!row.State.Equals("Conectado", StringComparison.OrdinalIgnoreCase) || unconfirmedScans >= 4)
-                        row.State = "Desconectado";
-                }
+                row.State = connectedMacs.Contains(mac) || ping ? "Conectado" : "Desconectado";
+                _deviceMissedScans[mac] = 0;
+                _deviceUnconfirmedScans[mac] = 0;
                 if (IsBlockedDevice(mac, device.Ip) && _appliedBlockFilters.Add(device.Ip))
                 {
                     try
@@ -655,21 +644,9 @@ public partial class MainWindow : Window
             foreach (var row in _devices)
             {
                 if (found.ContainsKey(row.Mac)) continue;
-                if (connectedMacs.Contains(row.Mac))
-                {
-                    row.State = "Conectado";
-                    _deviceMissedScans[row.Mac] = 0;
-                    _deviceUnconfirmedScans[row.Mac] = 0;
-                    continue;
-                }
-                _deviceMissedScans.TryGetValue(row.Mac, out var missedScans);
-                missedScans++;
-                _deviceMissedScans[row.Mac] = missedScans;
-                if (missedScans >= 4)
-                {
-                    row.State = "Desconectado";
-                    _deviceUnconfirmedScans[row.Mac] = 0;
-                }
+                row.State = connectedMacs.Contains(row.Mac) ? "Conectado" : "Desconectado";
+                _deviceMissedScans[row.Mac] = 0;
+                _deviceUnconfirmedScans[row.Mac] = 0;
             }
 
             // Keep existing DeviceRow objects in place. Clearing and rebuilding the
