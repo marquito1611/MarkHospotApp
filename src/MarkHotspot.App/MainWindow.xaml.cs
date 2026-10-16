@@ -49,6 +49,7 @@ public partial class MainWindow : Window
     private bool _deviceScanInProgress;
     private bool _hotspotOperationInProgress;
     private bool _changingStartupToggle;
+    private DateTime _lastDeviceCacheSaveUtc = DateTime.MinValue;
     private readonly bool _startMinimized;
 
     public MainWindow()
@@ -76,6 +77,7 @@ public partial class MainWindow : Window
         _trafficTimer.Start();
         LoadSettings();
         CurrentSettings = _settings;
+        RestoreDeviceCache();
         AutoStartToggle.IsChecked = _settings.StartWithWindows;
         try { ApplyStartupRegistration(_settings.StartWithWindows); }
         catch (Exception ex) { SetStatus("No se pudo aplicar el inicio automático: " + ex.Message); }
@@ -103,6 +105,7 @@ public partial class MainWindow : Window
             _activationTimer.Stop();
             _trafficTimer.Stop();
             _hotspotStateTimer.Stop();
+            try { PersistDeviceCache(); SaveSettings(); } catch { }
             _deviceDiscoveryTimer.Stop();
             StopTrafficCapture();
             if (_trayIcon is not null)
@@ -397,6 +400,43 @@ public partial class MainWindow : Window
         catch (Exception ex) { SetStatus("No se pudo leer la configuración: " + ex.Message); }
     }
 
+    private void RestoreDeviceCache()
+    {
+        _settings.DeviceCache ??= new List<DeviceCacheEntry>();
+        foreach (var cached in _settings.DeviceCache)
+        {
+            var mac = (cached.Mac ?? "").Trim().Replace('-', ':').ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(mac) || _devicesByMac.ContainsKey(mac)) continue;
+            var name = _settings.DeviceNames.TryGetValue(mac, out var savedName) && !string.IsNullOrWhiteSpace(savedName)
+                ? savedName : (string.IsNullOrWhiteSpace(cached.Name) ? SafeDeviceNameFromMac(mac) : cached.Name);
+            var row = new DeviceRow(cached.Ip ?? "", mac, "Desconectado")
+            {
+                Name = name,
+                TotalUploadBytes = cached.TotalUploadBytes,
+                TotalDownloadBytes = cached.TotalDownloadBytes,
+                TrafficText = "↑ —   ↓ —"
+            };
+            _devicesByMac[mac] = row;
+            _devices.Add(row);
+            if (!string.IsNullOrWhiteSpace(row.Ip)) _macByIp[row.Ip] = mac;
+        }
+        DevicesCountText.Text = _devices.Count.ToString();
+        SyncTrafficLimitRows();
+    }
+
+    private void PersistDeviceCache()
+    {
+        _settings.DeviceCache = _devices.Select(row => new DeviceCacheEntry
+        {
+            Mac = row.Mac,
+            Ip = row.Ip,
+            Name = row.Name,
+            TotalUploadBytes = row.TotalUploadBytes,
+            TotalDownloadBytes = row.TotalDownloadBytes,
+            LastSeen = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss")
+        }).ToList();
+    }
+
     private void SaveSettings()
     {
         Directory.CreateDirectory(_dataDirectory);
@@ -520,7 +560,10 @@ public partial class MainWindow : Window
             SyncTrafficLimitRows();
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
-            DeviceScanStatusText.Text = _captureStarted ? $"Detección automática activa: {_devices.Count} dispositivos. Tráfico en vivo activo." : $"Detección automática actualizada: {_devices.Count} dispositivos. La captura de tráfico requiere Npcap.";
+            SyncTrafficLimitRows();
+            PersistDeviceCache();
+            SaveSettings();
+            DeviceScanStatusText.Text = _captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos. Para ver tráfico en vivo, verifica Npcap y la interfaz de captura.";
         }
         catch (Exception ex) { DeviceScanStatusText.Text = "Error en la detección automática: " + ex.Message; }
         finally
@@ -739,13 +782,26 @@ public partial class MainWindow : Window
         foreach (var row in _devices)
         {
             if (_trafficByMac.TryGetValue(row.Mac, out var counter))
+            {
                 row.TrafficText = $"↑ {FormatRate(counter.TakeUpload())}   ↓ {FormatRate(counter.TakeDownload())}";
+                row.TotalUploadBytes = counter.TotalUpload;
+                row.TotalDownloadBytes = counter.TotalDownload;
+            }
             else
                 row.TrafficText = _captureStarted ? "↑ 0 B/s   ↓ 0 B/s" : "↑ —   ↓ —";
 
             var limitRow = _trafficLimits.FirstOrDefault(x => x.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase));
             if (limitRow is not null)
+            {
                 limitRow.TrafficText = row.TrafficText;
+                limitRow.TotalUploadBytes = row.TotalUploadBytes;
+                limitRow.TotalDownloadBytes = row.TotalDownloadBytes;
+            }
+        }
+        if (DateTime.UtcNow - _lastDeviceCacheSaveUtc >= TimeSpan.FromSeconds(10))
+        {
+            try { PersistDeviceCache(); SaveSettings(); _lastDeviceCacheSaveUtc = DateTime.UtcNow; } catch { }
+        }
         }
     }
 
@@ -757,8 +813,12 @@ public partial class MainWindow : Window
     {
         private long _upload;
         private long _download;
-        public void AddUpload(long bytes) => Interlocked.Add(ref _upload, bytes);
-        public void AddDownload(long bytes) => Interlocked.Add(ref _download, bytes);
+        private long _totalUpload;
+        private long _totalDownload;
+        public long TotalUpload => Interlocked.Read(ref _totalUpload);
+        public long TotalDownload => Interlocked.Read(ref _totalDownload);
+        public void AddUpload(long bytes) { Interlocked.Add(ref _upload, bytes); Interlocked.Add(ref _totalUpload, bytes); }
+        public void AddDownload(long bytes) { Interlocked.Add(ref _download, bytes); Interlocked.Add(ref _totalDownload, bytes); }
         public long TakeUpload() => Interlocked.Exchange(ref _upload, 0);
         public long TakeDownload() => Interlocked.Exchange(ref _download, 0);
     }
@@ -840,6 +900,8 @@ public partial class MainWindow : Window
             row.Ip = device.Ip;
             row.State = device.State;
             row.TrafficText = device.TrafficText;
+            row.TotalUploadBytes = device.TotalUploadBytes;
+            row.TotalDownloadBytes = device.TotalDownloadBytes;
             _trafficLimits.Add(row);
         }
         if (TrafficEngineStatusText is not null)
@@ -908,6 +970,36 @@ public partial class MainWindow : Window
         dialog.ShowDialog();
     }
 
+    private static void ApplyWindowsQosPolicies(TrafficLimitSetting setting)
+    {
+        if (!IPAddress.TryParse(setting.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            throw new InvalidOperationException("El dispositivo no tiene una dirección IPv4 válida para aplicar las políticas QoS.");
+        var key = Regex.Replace(setting.Mac, "[^A-Fa-f0-9]", "");
+        if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("No se pudo crear el identificador de la política QoS.");
+        var upName = "MarkHotspot-UL-" + key;
+        var downName = "MarkHotspot-DL-" + key;
+        var uploadBits = Math.Max(1L, setting.UploadKBps) * 1024L * 8L;
+        var downloadBits = Math.Max(1L, setting.DownloadKBps) * 1024L * 8L;
+        var script = $@"
+$ErrorActionPreference = 'Stop'
+$upName = '{upName}'
+$downName = '{downName}'
+$ip = '{ip}'
+Remove-NetQosPolicy -Name $upName -PolicyStore PersistentStore -Confirm:$false -ErrorAction SilentlyContinue
+Remove-NetQosPolicy -Name $downName -PolicyStore PersistentStore -Confirm:$false -ErrorAction SilentlyContinue
+New-NetQosPolicy -Name $downName -IPDstAddressMatchCondition $ip -ThrottleRateActionBitsPerSecond {downloadBits} -PolicyStore PersistentStore | Out-Null
+New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActionBitsPerSecond {uploadBits} -PolicyStore PersistentStore | Out-Null
+";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        var psi = new ProcessStartInfo("powershell.exe", "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
+        { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
+        using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar PowerShell para configurar QoS.");
+        var stdout = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0) throw new InvalidOperationException("Windows no pudo instalar las políticas QoS: " + Short(string.IsNullOrWhiteSpace(stderr) ? stdout : stderr));
+    }
+
     private void ConfigureSelectedDeviceTraffic()
     {
         if (DevicesList.SelectedItem is not DeviceRow selected) return;
@@ -942,18 +1034,22 @@ public partial class MainWindow : Window
             try
             {
                 _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
-                _settings.TrafficLimits.Add(new TrafficLimitSetting
+                var setting = new TrafficLimitSetting
                 {
                     Mac = selected.Mac.ToUpperInvariant(), Ip = selected.Ip,
                     UploadKBps = up, DownloadKBps = down,
                     UploadMbps = Math.Clamp((int)Math.Ceiling(up / 125.0), 1, 50),
                     DownloadMbps = Math.Clamp((int)Math.Ceiling(down / 125.0), 1, 100),
                     UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss")
-                });
+                };
+                ApplyWindowsQosPolicies(setting);
+                _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
+                _settings.TrafficLimits.Add(setting);
+                PersistDeviceCache();
                 SaveSettings();
                 SyncTrafficLimitRows();
-                SetStatus($"Límites guardados para {selected.Name}: subida {up} KB/s, bajada {down} KB/s. Nota: esta versión guarda la configuración, pero aún no aplica el límite al tráfico real.");
-                System.Windows.MessageBox.Show(dialog, "Los límites quedaron guardados. El motor de limitación real del tráfico todavía no está integrado en esta versión.", "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Information);
+                TrafficEngineStatusText.Text = $"Políticas QoS de Windows instaladas para {selected.Name}: ↑ {up} KB/s, ↓ {down} KB/s.";
+                SetStatus($"Se guardaron los límites y se instalaron las políticas QoS de Windows para {selected.Name}: subida {up} KB/s, bajada {down} KB/s.");
                 dialog.DialogResult = true;
             }
             catch (Exception ex) { System.Windows.MessageBox.Show(dialog, "No se pudieron guardar los límites: " + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error); }
@@ -1665,6 +1761,11 @@ public partial class MainWindow : Window
         public string DisplayState => MainWindow.IsBlockedDevice(Mac, Ip) ? "Bloqueado" : State;
         public void RefreshBlockedState() => OnPropertyChanged(nameof(DisplayState));
         public string TrafficText { get => _trafficText; set { _trafficText = value; OnPropertyChanged(); } }
+        private long _totalUploadBytes;
+        private long _totalDownloadBytes;
+        public long TotalUploadBytes { get => _totalUploadBytes; set { _totalUploadBytes = Math.Max(0, value); OnPropertyChanged(); OnPropertyChanged(nameof(TotalTrafficText)); } }
+        public long TotalDownloadBytes { get => _totalDownloadBytes; set { _totalDownloadBytes = Math.Max(0, value); OnPropertyChanged(); OnPropertyChanged(nameof(TotalTrafficText)); } }
+        public string TotalTrafficText => $"↑ {TotalUploadBytes / 1048576d:0.00} MB   ↓ {TotalDownloadBytes / 1048576d:0.00} MB";
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? name = null) => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
@@ -1690,6 +1791,11 @@ public partial class MainWindow : Window
         public int DownloadMbps { get=>_downloadMbps; set { _downloadMbps=Math.Clamp(value,1,100); OnPropertyChanged(); } }
         public int UploadMbps { get=>_uploadMbps; set { _uploadMbps=Math.Clamp(value,1,50); OnPropertyChanged(); } }
         public string TrafficText { get=>_trafficText; set { _trafficText=value; OnPropertyChanged(); } }
+        private long _totalUploadBytes;
+        private long _totalDownloadBytes;
+        public long TotalUploadBytes { get=>_totalUploadBytes; set { _totalUploadBytes=Math.Max(0,value); OnPropertyChanged(); OnPropertyChanged(nameof(TotalTrafficText)); } }
+        public long TotalDownloadBytes { get=>_totalDownloadBytes; set { _totalDownloadBytes=Math.Max(0,value); OnPropertyChanged(); OnPropertyChanged(nameof(TotalTrafficText)); } }
+        public string TotalTrafficText => $"↑ {TotalUploadBytes / 1048576d:0.00} MB   ↓ {TotalDownloadBytes / 1048576d:0.00} MB";
         public event PropertyChangedEventHandler? PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string? name=null) => PropertyChanged?.Invoke(this,new PropertyChangedEventArgs(name));
     }
@@ -1705,6 +1811,16 @@ public partial class MainWindow : Window
         public List<BlockedDevice> BlockedDevices { get; set; } = new();
         public List<TrafficLimitSetting> TrafficLimits { get; set; } = new();
         public Dictionary<string, string> DeviceNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+        public List<DeviceCacheEntry> DeviceCache { get; set; } = new();
+    }
+    private sealed class DeviceCacheEntry
+    {
+        public string Mac { get; set; } = "";
+        public string Ip { get; set; } = "";
+        public string Name { get; set; } = "";
+        public long TotalUploadBytes { get; set; }
+        public long TotalDownloadBytes { get; set; }
+        public string LastSeen { get; set; } = "";
     }
     private sealed class TrafficLimitSetting
     {
