@@ -48,6 +48,7 @@ public partial class MainWindow : Window
     private readonly DispatcherTimer _hotspotStateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(5) };
     private bool _deviceScanInProgress;
+    private bool _npcapInstallAttempted;
     private bool _hotspotOperationInProgress;
     private bool _changingStartupToggle;
     private DateTime _lastDeviceCacheSaveUtc = DateTime.MinValue;
@@ -506,9 +507,21 @@ public partial class MainWindow : Window
         _deviceScanInProgress = true;
         try
         {
-            // Automatic scans must never launch an installer repeatedly.
+            // Check Npcap once per app session. If it is missing, offer the official
+            // installer with Windows elevation; never open repeated installers on timer ticks.
             if (!IsNpcapInstalled())
-                DeviceScanStatusText.Text = "Sin Npcap, la detección por ARP puede ser limitada.";
+            {
+                DeviceScanStatusText.Text = "Npcap no está instalado; se necesita para capturar tráfico en tiempo real.";
+                if (!_npcapInstallAttempted)
+                {
+                    _npcapInstallAttempted = true;
+                    var installed = await DownloadAndInstallNpcapAsync();
+                    if (installed)
+                        DeviceScanStatusText.Text = "Npcap instalado. Preparando la captura de tráfico…";
+                    else
+                        DeviceScanStatusText.Text = "Npcap no está disponible. Instálalo y pulsa Actualizar para reintentar.";
+                }
+            }
 
             DeviceScanStatusText.Text = "Actualizando dispositivos conectados…";
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
@@ -739,6 +752,12 @@ public partial class MainWindow : Window
     private void StartTrafficCapture()
     {
         if (_captureStarted) return;
+        if (!IsNpcapInstalled())
+        {
+            DeviceScanStatusText.Text = "Npcap no está instalado; no se puede capturar tráfico en tiempo real.";
+            return;
+        }
+
         try
         {
             var hotspotNics = NetworkInterface.GetAllNetworkInterfaces()
@@ -754,14 +773,24 @@ public partial class MainWindow : Window
                 (!string.IsNullOrWhiteSpace(d.Description) && !string.IsNullOrWhiteSpace(n.Description) &&
                  (d.Description.Contains(n.Description, StringComparison.OrdinalIgnoreCase) ||
                   n.Description.Contains(d.Description, StringComparison.OrdinalIgnoreCase)))));
-            if (candidate is null) return;
+            if (candidate is null)
+            {
+                DeviceScanStatusText.Text = "Npcap está instalado, pero no se encontró una interfaz de captura que coincida con el hotspot.";
+                return;
+            }
+
             candidate.OnPacketArrival += TrafficPacketArrived;
             candidate.Open(DeviceModes.Promiscuous, 1000);
             candidate.StartCapture();
             _captureDevice = candidate;
             _captureStarted = true;
+            DeviceScanStatusText.Text = "Captura de tráfico en tiempo real activa.";
         }
-        catch { StopTrafficCapture(); }
+        catch (Exception ex)
+        {
+            StopTrafficCapture();
+            DeviceScanStatusText.Text = "No se pudo iniciar la captura de tráfico: " + ex.Message;
+        }
     }
 
     private void StopTrafficCapture()
