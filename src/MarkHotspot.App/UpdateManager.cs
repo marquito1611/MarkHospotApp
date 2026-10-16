@@ -224,7 +224,7 @@ public partial class MainWindow
             // No calcular SHA-256: iniciar el script de reemplazo inmediatamente.
             cancellation.Token.ThrowIfCancellationRequested();
             UpdateStatusText.Text = "Instalando " + update.Tag + " y reiniciando MarkHotspot…";
-            LaunchPortableUpdater(downloadPath);
+            LaunchPortableUpdater(downloadPath, update.Tag);
             downloadPath = null;
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -292,45 +292,56 @@ public partial class MainWindow
 
     private static string EscapePowerShellLiteral(string value) => value.Replace("'", "''");
 
-    private static void LaunchPortableUpdater(string downloadedExe)
+    private static void LaunchPortableUpdater(string downloadedExe, string versionTag)
     {
         var targetExe = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
         if (string.IsNullOrWhiteSpace(targetExe))
             throw new InvalidOperationException("No se pudo determinar la ubicación del ejecutable actual.");
+
+        var fullTarget = Path.GetFullPath(targetExe);
+        var fullDownload = Path.GetFullPath(downloadedExe);
+        var safeVersion = Regex.Replace(versionTag, @"[^A-Za-z0-9._-]", "_");
+        var targetDirectory = Path.GetDirectoryName(fullTarget)
+            ?? throw new InvalidOperationException("No se pudo determinar la carpeta de MarkHotspot.");
+        var targetBaseName = Path.GetFileNameWithoutExtension(fullTarget);
+        var newTarget = Path.Combine(targetDirectory, targetBaseName + "-" + safeVersion + ".exe");
+        if (string.Equals(fullTarget, newTarget, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("La versión nueva tiene el mismo nombre que el ejecutable actual.");
 
         var scriptPath = Path.Combine(Path.GetTempPath(), "MarkHotspot-update-" + Guid.NewGuid().ToString("N") + ".ps1");
         var script = string.Join(Environment.NewLine, new[]
         {
             "$ErrorActionPreference = 'Stop'",
             "$target = '__TARGET__'",
+            "$newTarget = '__NEW_TARGET__'",
             "$download = '__DOWNLOAD__'",
-            "$staged = $target + '.update'",
-            "$backup = $target + '.backup'",
+            "$staged = $newTarget + '.staging.exe'",
             "__PID__",
             "try {",
             "  for ($i = 0; $i -lt 180; $i++) { if (-not (Get-Process -Id $processId -ErrorAction SilentlyContinue)) { break }; Start-Sleep -Milliseconds 500 }",
             "  if (Get-Process -Id $processId -ErrorAction SilentlyContinue) { throw 'MarkHotspot no se cerró a tiempo.' }",
-            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw ('No existe el ejecutable instalado: ' + $target) }",
+            "  if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw ('No existe el ejecutable actual: ' + $target) }",
             "  if (-not (Test-Path -LiteralPath $download -PathType Leaf)) { throw ('No existe el archivo descargado: ' + $download) }",
             "  Copy-Item -LiteralPath $download -Destination $staged -Force",
-            "  Copy-Item -LiteralPath $target -Destination $backup -Force",
-            "  if (Test-Path -LiteralPath $target) { [System.IO.File]::Replace($staged, $target, $null, $true) } else { Move-Item -LiteralPath $staged -Destination $target -Force }",
-            "  $newProcess = Start-Process -FilePath $target -PassThru",
+            "  Move-Item -LiteralPath $staged -Destination $newTarget -Force",
+            "  $newProcess = Start-Process -FilePath $newTarget -PassThru",
             "  Start-Sleep -Seconds 5",
-            "  if (-not (Get-Process -Id $newProcess.Id -ErrorAction SilentlyContinue)) { throw 'La nueva versión no permaneció abierta; se restaurará la versión anterior.' }",
-            "  Remove-Item -LiteralPath $backup -Force -ErrorAction SilentlyContinue",
+            "  if (-not (Get-Process -Id $newProcess.Id -ErrorAction SilentlyContinue)) { throw 'La nueva versión no permaneció abierta; se intentará restaurar la versión anterior.' }",
+            "  if (Test-Path -LiteralPath $target -PathType Leaf) { Remove-Item -LiteralPath $target -Force }",
             "  Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue",
             "} catch {",
             "  $failure = $_.Exception.Message",
-            "  try { if (Test-Path -LiteralPath $backup) { Copy-Item -LiteralPath $backup -Destination $target -Force; Start-Process -FilePath $target } } catch {}",
-            "  try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('La actualización falló. Se intentó restaurar la versión anterior.' + [Environment]::NewLine + $failure + [Environment]::NewLine + 'Ejecutable: ' + $target), 'MarkHotspot', 'OK', 'Error') | Out-Null } catch {}",
+            "  try { if (Test-Path -LiteralPath $target -PathType Leaf) { Start-Process -FilePath $target } } catch {}",
+            "  try { if (Test-Path -LiteralPath $newTarget -PathType Leaf) { Remove-Item -LiteralPath $newTarget -Force -ErrorAction SilentlyContinue } } catch {}",
+            "  try { Add-Type -AssemblyName PresentationFramework; [System.Windows.MessageBox]::Show(('La actualización falló. Se mantuvo o reinició la versión anterior.' + [Environment]::NewLine + $failure + [Environment]::NewLine + 'Ejecutable: ' + $target), 'MarkHotspot', 'OK', 'Error') | Out-Null } catch {}",
             "} finally {",
             "  Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue",
             "  Remove-Item -LiteralPath $download -Force -ErrorAction SilentlyContinue",
             "  try { Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue } catch {}",
             "}"
-        }).Replace("__TARGET__", EscapePowerShellLiteral(Path.GetFullPath(targetExe)))
-          .Replace("__DOWNLOAD__", EscapePowerShellLiteral(Path.GetFullPath(downloadedExe)))
+        }).Replace("__TARGET__", EscapePowerShellLiteral(fullTarget))
+          .Replace("__NEW_TARGET__", EscapePowerShellLiteral(newTarget))
+          .Replace("__DOWNLOAD__", EscapePowerShellLiteral(fullDownload))
           .Replace("__PID__", "$processId = " + Environment.ProcessId);
 
         File.WriteAllText(scriptPath, script, new UTF8Encoding(false));
