@@ -452,7 +452,31 @@ public partial class MainWindow : Window
 
     private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshAdapters();
     private async void ScanDevicesButton_Click(object sender, RoutedEventArgs e) => await ScanDevicesAsync();
-    private async void BlockDeviceButton_Click(object sender, RoutedEventArgs e) => await ToggleDeviceBlockAsync();
+    private async void BlockDeviceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DevicesList.SelectedItem is not DeviceRow)
+        {
+            SetStatus("Selecciona un dispositivo de la lista antes de bloquearlo.");
+            System.Windows.MessageBox.Show(this, "Selecciona primero un dispositivo en la lista.", "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        BlockDeviceButton.IsEnabled = false;
+        try
+        {
+            SetStatus("Aplicando el bloqueo de red…");
+            await ToggleDeviceBlockAsync();
+        }
+        catch (Exception ex)
+        {
+            SetStatus("No se pudo bloquear el dispositivo: " + ex.Message);
+            System.Windows.MessageBox.Show(this, "No se pudo bloquear el dispositivo:\n" + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            UpdateBlockButton();
+        }
+    }
     private void RenameDeviceButton_Click(object sender, RoutedEventArgs e) => RenameSelectedDevice();
     private void LimitDeviceTrafficButton_Click(object sender, RoutedEventArgs e) => ConfigureSelectedDeviceTraffic();
 
