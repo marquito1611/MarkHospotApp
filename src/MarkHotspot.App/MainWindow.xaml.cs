@@ -52,6 +52,8 @@ public partial class MainWindow : Window
     private bool _deviceScanInProgress;
     private bool _npcapInstallAttempted;
     private bool _hotspotOperationInProgress;
+    private bool _updatingCredentials;
+    private bool _networkRestartInProgress;
     private bool _changingStartupToggle;
     private DateTime _lastDeviceCacheSaveUtc = DateTime.MinValue;
     private readonly bool _startMinimized;
@@ -99,6 +101,7 @@ public partial class MainWindow : Window
         SsidBox.Text = _settings.Ssid;
         PasswordBox.Password = _settings.Password;
         PasswordVisibleBox.Text = _settings.Password;
+        UpdateCredentialsSaveButton();
         RefreshAdapters();
         NetworkChange.NetworkAddressChanged += NetworkChange_NetworkAddressChanged;
         NetworkChange.NetworkAvailabilityChanged += NetworkChange_NetworkAvailabilityChanged;
@@ -372,6 +375,7 @@ public partial class MainWindow : Window
             PasswordEyeSlashPath.Visibility = Visibility.Visible;
             PasswordVisibleBox.Focus();
             PasswordVisibleBox.CaretIndex = PasswordVisibleBox.Text.Length;
+            UpdateCredentialsSaveButton();
         }
         else
         {
@@ -380,6 +384,7 @@ public partial class MainWindow : Window
             PasswordEyeSlashPath.Visibility = Visibility.Collapsed;
             PasswordBox.Visibility = Visibility.Visible;
             PasswordBox.Focus();
+            UpdateCredentialsSaveButton();
         }
     }
 
@@ -452,7 +457,162 @@ public partial class MainWindow : Window
         File.Move(temporary, _settingsPath, true);
     }
 
-    private void RefreshButton_Click(object sender, RoutedEventArgs e) => RefreshAdapters();
+    private void SsidBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e) => UpdateCredentialsSaveButton();
+    private void PasswordBox_PasswordChanged(object sender, RoutedEventArgs e) => UpdateCredentialsSaveButton();
+    private void PasswordVisibleBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e) => UpdateCredentialsSaveButton();
+
+    private void UpdateCredentialsSaveButton()
+    {
+        if (_updatingCredentials || SaveCredentialsButton is null) return;
+        var password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordVisibleBox.Text;
+        var changed = !string.Equals(SsidBox.Text.Trim(), _settings.Ssid, StringComparison.Ordinal) ||
+            !string.Equals(password, _settings.Password, StringComparison.Ordinal);
+        SaveCredentialsButton.Visibility = changed ? Visibility.Visible : Visibility.Collapsed;
+        if (changed)
+            CredentialsStatusText.Text = "Cambiaste el nombre o la contraseña. Guarda los cambios para aplicarlos.";
+        else if (CredentialsStatusText.Text.StartsWith("Cambiaste", StringComparison.Ordinal) ||
+                 CredentialsStatusText.Text.StartsWith("Tienes cambios", StringComparison.Ordinal))
+            CredentialsStatusText.Text = "";
+    }
+
+    private async void SaveCredentialsButton_Click(object sender, RoutedEventArgs e)
+    {
+        var ssid = SsidBox.Text.Trim();
+        var password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordVisibleBox.Text;
+        if (ssid.Length is < 1 or > 32) { CredentialsStatusText.Text = "El nombre Wi-Fi debe tener entre 1 y 32 caracteres."; return; }
+        if (password.Length is < 8 or > 63) { CredentialsStatusText.Text = "La contraseña debe tener entre 8 y 63 caracteres."; return; }
+        if (password.Contains('"')) { CredentialsStatusText.Text = "La contraseña no puede contener comillas dobles en esta versión."; return; }
+
+        SaveCredentialsButton.IsEnabled = false;
+        try
+        {
+            _settings.Ssid = ssid;
+            _settings.Password = password;
+            SaveSettings();
+            UpdateCredentialsSaveButton();
+            CredentialsStatusText.Text = "Configuración guardada.";
+            if (await GetModernHotspotStateAsync() == TetheringOperationalState.On)
+            {
+                CredentialsStatusText.Text = "Aplicando el nombre y la contraseña nuevos al hotspot…";
+                var stopped = await StopModernHotspotAsync();
+                if (!stopped.Success)
+                {
+                    CredentialsStatusText.Text = "Se guardaron los cambios, pero Windows no pudo detener el hotspot. Pulsa Reinicia la red.";
+                    RestartNetworkHintButton.Visibility = Visibility.Visible;
+                    HotspotDetailText.Text = stopped.Message;
+                    return;
+                }
+                var started = await StartModernHotspotAsync();
+                HotspotDetailText.Text = started.Message;
+                if (started.Success)
+                {
+                    HotspotStateText.Text = "Hotspot Activo";
+                    CredentialsStatusText.Text = "Nombre y contraseña guardados y aplicados.";
+                    RestartNetworkHintButton.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    HotspotStateText.Text = "Hotspot Detenido";
+                    CredentialsStatusText.Text = "Los cambios se guardaron, pero Windows no pudo crear el Mobile Hotspot. Pulsa Reinicia la red.";
+                    RestartNetworkHintButton.Visibility = Visibility.Visible;
+                }
+            }
+        }
+        catch (Exception ex) { CredentialsStatusText.Text = "No se pudieron guardar las credenciales: " + ex.Message; }
+        finally { SaveCredentialsButton.IsEnabled = true; UpdateCredentialsSaveButton(); }
+    }
+
+    private async Task RestartNetworkAsync()
+    {
+        if (_networkRestartInProgress) return;
+        _networkRestartInProgress = true;
+        RefreshButton.IsEnabled = false;
+        RestartNetworkHintButton.IsEnabled = false;
+        try
+        {
+            HotspotStateText.Text = "Reiniciando red…";
+            HotspotDetailText.Text = "Deteniendo el hotspot y reiniciando los adaptadores y servicios de red de Windows. La conexión puede interrumpirse durante unos segundos.";
+            RestartNetworkHintButton.Visibility = Visibility.Collapsed;
+            try { await StopModernHotspotAsync(); } catch { }
+
+            const string script = @"
+$ErrorActionPreference = 'Continue'
+$ProgressPreference = 'SilentlyContinue'
+$adapters = @(Get-NetAdapter | Where-Object { $_.Name -notmatch 'Loopback' -and $_.Status -ne 'Disabled' })
+$adapterNames = @($adapters | ForEach-Object { $_.Name })
+$errors = New-Object System.Collections.Generic.List[string]
+foreach ($adapter in $adapters) {
+    try { Disable-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop | Out-Null }
+    catch { $errors.Add(('Deshabilitar ' + $adapter.Name + ': ' + $_.Exception.Message)) }
+}
+Start-Sleep -Seconds 3
+foreach ($name in $adapterNames) {
+    try { Enable-NetAdapter -Name $name -Confirm:$false -ErrorAction Stop | Out-Null }
+    catch { $errors.Add(('Habilitar ' + $name + ': ' + $_.Exception.Message)) }
+}
+Start-Sleep -Seconds 2
+foreach ($service in @('WlanSvc','SharedAccess','icssvc')) {
+    try {
+        $svc = Get-Service -Name $service -ErrorAction Stop
+        if ($svc.Status -eq 'Running') { Restart-Service -Name $service -Force -ErrorAction Stop }
+        else { Start-Service -Name $service -ErrorAction Stop }
+    } catch { $errors.Add(('Servicio ' + $service + ': ' + $_.Exception.Message)) }
+}
+if ($adapterNames.Count -eq 0) { $errors.Add('Windows no encontró adaptadores de red habilitados para reiniciar.') }
+if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($errors -join ' | ')); exit 1 }
+[Console]::Out.WriteLine('MARKHOTSPOT_OK: Reiniciados ' + $adapterNames.Count + ' adaptadores y los servicios de red.')
+";
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            var psi = new ProcessStartInfo("powershell.exe", "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
+            };
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar PowerShell.");
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(90000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                throw new TimeoutException("Windows tardó demasiado en reiniciar los adaptadores de red.");
+            }
+            Task.WaitAll(stdoutTask, stderrTask);
+            var stdout = stdoutTask.Result.Trim();
+            var stderr = stderrTask.Result.Trim();
+            if (process.ExitCode != 0 || !stdout.Contains("MARKHOTSPOT_OK", StringComparison.Ordinal))
+            {
+                var marker = Regex.Match(stdout, @"MARKHOTSPOT_ERROR:\s*(.+)", RegexOptions.Singleline);
+                var detail = marker.Success ? marker.Groups[1].Value.Trim() :
+                    !string.IsNullOrWhiteSpace(stderr) ? stderr :
+                    !string.IsNullOrWhiteSpace(stdout) ? stdout : "Windows no confirmó el reinicio de la red.";
+                HotspotStateText.Text = "Reinicio de red incompleto";
+                HotspotDetailText.Text = detail;
+                RestartNetworkHintButton.Visibility = Visibility.Visible;
+                return;
+            }
+            await Task.Delay(3000);
+            await RefreshAdaptersAsync();
+            await RefreshHotspotWifiAdaptersAsync();
+            HotspotStateText.Text = "Red reiniciada";
+            HotspotDetailText.Text = stdout;
+            CredentialsStatusText.Text = "Red reiniciada. Si el hotspot no se activa solo, pulsa Activar Mobile Hotspot.";
+        }
+        catch (Exception ex)
+        {
+            HotspotStateText.Text = "Error al reiniciar la red";
+            HotspotDetailText.Text = ex.Message;
+            RestartNetworkHintButton.Visibility = Visibility.Visible;
+        }
+        finally
+        {
+            RefreshButton.IsEnabled = true;
+            RestartNetworkHintButton.IsEnabled = true;
+            _networkRestartInProgress = false;
+        }
+    }
+
+    private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RestartNetworkAsync();
     private async void ScanDevicesButton_Click(object sender, RoutedEventArgs e) => await ScanDevicesAsync();
     private async void BlockDeviceButton_Click(object sender, RoutedEventArgs e)
     {
@@ -489,6 +649,11 @@ public partial class MainWindow : Window
         StartButton.IsEnabled = false;
         try
         {
+            if (SaveCredentialsButton.Visibility == Visibility.Visible)
+            {
+                CredentialsStatusText.Text = "Tienes cambios pendientes. Pulsa Guardar antes de activar el hotspot.";
+                return;
+            }
             var ssid = SsidBox.Text.Trim();
             var password = PasswordBox.Visibility == Visibility.Visible ? PasswordBox.Password : PasswordVisibleBox.Text;
             if (ssid.Length is < 1 or > 32) { SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres."); return; }
@@ -540,13 +705,15 @@ public partial class MainWindow : Window
             {
                 HotspotStateText.Text = "Hotspot Detenido";
                 HotspotDetailText.Text = result.Message;
+                RestartNetworkHintButton.Visibility = Visibility.Visible;
                 return;
             }
+            RestartNetworkHintButton.Visibility = Visibility.Collapsed;
             await ConfirmHotspotStateAsync();
             await RefreshAdaptersAsync();
             await ScanDevicesAsync();
         }
-        catch (Exception ex) { SetStatus("Error al iniciar el punto de acceso: " + ex.Message); }
+        catch (Exception ex) { SetStatus("Error al iniciar el punto de acceso: " + ex.Message); RestartNetworkHintButton.Visibility = Visibility.Visible; }
         finally { StartButton.IsEnabled = true; }
     }
 
@@ -559,9 +726,10 @@ public partial class MainWindow : Window
             var result = await StopModernHotspotAsync();
             HotspotStateText.Text = "Hotspot Detenido";
             HotspotDetailText.Text = result.Message;
+            RestartNetworkHintButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
             await RefreshModernHotspotStateAsync();
         }
-        catch (Exception ex) { SetStatus("Error al detener: " + ex.Message); }
+        catch (Exception ex) { SetStatus("Error al detener el Mobile Hotspot: " + ex.Message); RestartNetworkHintButton.Visibility = Visibility.Visible; }
         finally { StopButton.IsEnabled = true; }
     }
 
@@ -1656,6 +1824,7 @@ catch {{
         else
         {
             HotspotStateText.Text = "Hotspot Detenido";
+            RestartNetworkHintButton.Visibility = Visibility.Visible;
         }
     }
 
