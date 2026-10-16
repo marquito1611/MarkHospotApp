@@ -46,6 +46,7 @@ internal static class WfpDeviceBlocker
         {
             DeleteIfPresent(engine, CreateFilterKey(ipAddress, "inbound"));
             DeleteIfPresent(engine, CreateFilterKey(ipAddress, "forward"));
+            DeleteIfPresent(engine, CreateLegacyFilterKey(ipAddress));
             // Remove the single inbound filter used by pre-cache versions of MarkHotspot.
             DeleteIfPresent(engine, CreateLegacyFilterKey(ipAddress));
         }
@@ -113,6 +114,12 @@ internal static class WfpDeviceBlocker
     private static Guid CreateFilterKey(string ipAddress, string direction)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("MarkHotspot-WFP-Block-" + direction + "-" + ipAddress));
+        return new Guid(hash.AsSpan(0, 16));
+    }
+
+    private static Guid CreateLegacyFilterKey(string ipAddress)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("MarkHotspot-WFP-Block-" + ipAddress));
         return new Guid(hash.AsSpan(0, 16));
     }
 
