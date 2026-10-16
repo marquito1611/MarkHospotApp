@@ -930,7 +930,7 @@ public partial class MainWindow : Window
             _trafficLimits.Add(row);
         }
         if (TrafficEngineStatusText is not null)
-            TrafficEngineStatusText.Text = "Las reglas por MAC se pueden configurar y guardar. El motor que regula paquetes reenviados por Windows todavía no está activo; no se aplican límites reales aún.";
+            TrafficEngineStatusText.Text = "Las políticas de limitación se guardan en Windows QoS y se restauran al iniciar MarkHotspot.";
     }
 
     private void ApplyDeviceLimit_Click(object sender, RoutedEventArgs e)
@@ -941,13 +941,15 @@ public partial class MainWindow : Window
             SetStatus("No se puede guardar la regla: el dispositivo todavía no tiene una IP IPv4 válida. Busca los dispositivos e inténtalo de nuevo.");
             return;
         }
-        _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase));
-        _settings.TrafficLimits.Add(new TrafficLimitSetting { Mac = row.Mac.ToUpperInvariant(), Ip = row.Ip, DownloadMbps = row.DownloadMbps, UploadMbps = row.UploadMbps, UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss") });
         try
         {
+            var setting = new TrafficLimitSetting { Mac = row.Mac.ToUpperInvariant(), Ip = row.Ip, DownloadMbps = row.DownloadMbps, UploadMbps = row.UploadMbps, DownloadKBps = row.DownloadMbps * 125, UploadKBps = row.UploadMbps * 125, UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss") };
+            ApplyWindowsQosPolicies(setting);
+            _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(row.Mac, StringComparison.OrdinalIgnoreCase));
+            _settings.TrafficLimits.Add(setting);
             SaveSettings();
-            SetStatus($"Límites guardados para {row.Name} ({row.Mac}): descarga {row.DownloadMbps} Mbps y subida {row.UploadMbps} Mbps. Atención: todavía no se aplican al tráfico real.");
-            TrafficEngineStatusText.Text = "Configuración guardada localmente. Falta integrar y probar el motor de shaping de paquetes reenviados para aplicar límites reales.";
+            SetStatus($"Políticas QoS guardadas para {row.Name}: descarga {row.DownloadMbps} Mbps y subida {row.UploadMbps} Mbps.");
+            TrafficEngineStatusText.Text = "Las políticas QoS de Windows están configuradas para los dispositivos con límites.";
         }
         catch (Exception ex) { SetStatus("No se pudieron guardar los límites: " + ex.Message); }
     }
@@ -1188,6 +1190,7 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
                 throw;
             }
 
+            _appliedBlockFilters.Add(selected.Ip);
             foreach (var row in _devices) row.RefreshBlockedState();
             UpdateBlockButton();
             SetStatus($"Bloqueo de red aplicado a {selected.Name} ({selected.Ip}) mediante Windows Filtering Platform.");
