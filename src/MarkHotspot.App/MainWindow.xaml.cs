@@ -555,7 +555,6 @@ public partial class MainWindow : Window
                     if (_settings.DeviceNames.TryGetValue(mac, out var savedName) && !string.IsNullOrWhiteSpace(savedName)) name = savedName;
                     row = new DeviceRow(device.Ip, mac, "Desconectado") { Name = name };
                     _devicesByMac[mac] = row;
-                    _devices.Add(row);
                 }
                 row.Ip = device.Ip;
                 var ping = await PingDeviceAsync(device.Ip);
