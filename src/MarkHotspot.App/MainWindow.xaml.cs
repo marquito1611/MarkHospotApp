@@ -31,6 +31,8 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<DeviceRow> _devices = new();
     private readonly ObservableCollection<TrafficLimitRow> _trafficLimits = new();
     private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _deviceMissedScans = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _deviceUnconfirmedScans = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _appliedBlockFilters = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
