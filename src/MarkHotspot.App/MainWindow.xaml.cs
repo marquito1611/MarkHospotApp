@@ -823,7 +823,6 @@ public partial class MainWindow : Window
         {
             try { PersistDeviceCache(); SaveSettings(); _lastDeviceCacheSaveUtc = DateTime.UtcNow; } catch { }
         }
-        }
     }
 
     private static string FormatRate(long bytesPerSecond) =>
