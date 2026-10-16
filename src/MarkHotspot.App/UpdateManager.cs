@@ -304,6 +304,7 @@ public partial class MainWindow
         var targetDirectory = Path.GetDirectoryName(fullTarget)
             ?? throw new InvalidOperationException("No se pudo determinar la carpeta de MarkHotspot.");
         var targetBaseName = Path.GetFileNameWithoutExtension(fullTarget);
+        targetBaseName = Regex.Replace(targetBaseName, @"-v\d+\.\d+\.\d+-Public_Release$", string.Empty, RegexOptions.IgnoreCase);
         var newTarget = Path.Combine(targetDirectory, targetBaseName + "-" + safeVersion + ".exe");
         if (string.Equals(fullTarget, newTarget, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("La versión nueva tiene el mismo nombre que el ejecutable actual.");
