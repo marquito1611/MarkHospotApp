@@ -652,8 +652,13 @@ public partial class MainWindow : Window
             }
 
             foreach (var row in _devices)
-                if (!found.ContainsKey(row.Mac) && !connectedMacs.Contains(row.Mac))
-                    row.State = "Desconectado";
+            {
+                if (found.ContainsKey(row.Mac) || connectedMacs.Contains(row.Mac)) continue;
+                _deviceMissedScans.TryGetValue(row.Mac, out var missedScans);
+                missedScans++;
+                _deviceMissedScans[row.Mac] = missedScans;
+                if (missedScans >= 4) row.State = "Desconectado";
+            }
 
             // Keep existing DeviceRow objects in place. Clearing and rebuilding the
             // ObservableCollection on every poll resets ListView selection and hover/click state.
