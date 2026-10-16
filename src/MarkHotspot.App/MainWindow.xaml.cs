@@ -1118,16 +1118,21 @@ public partial class MainWindow : Window
     {
         if (!IPAddress.TryParse(setting.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             throw new InvalidOperationException("El dispositivo no tiene una dirección IPv4 válida para aplicar las políticas QoS.");
+
         var key = Regex.Replace(setting.Mac, "[^A-Fa-f0-9]", "");
-        if (string.IsNullOrWhiteSpace(key)) throw new InvalidOperationException("No se pudo crear el identificador de la política QoS.");
+        if (string.IsNullOrWhiteSpace(key))
+            throw new InvalidOperationException("No se pudo crear el identificador de la política QoS.");
+
         var upName = "MarkHotspot-UL-" + key;
         var downName = "MarkHotspot-DL-" + key;
         var uploadBits = Math.Max(1L, setting.UploadKBps) * 1024L * 8L;
         var downloadBits = Math.Max(1L, setting.DownloadKBps) * 1024L * 8L;
-        // NetQos uses *PrefixMatchCondition parameters (not *AddressMatchCondition).
-        // Match a single client with an IPv4 /32 prefix. Suppress PowerShell's first-run
-        // progress stream so CLIXML progress records do not hide the actual error.
         var ipPrefix = ip + "/32";
+
+        // NetQos does not use the firewall-style "PersistentStore" value. Omitting
+        // PolicyStore writes the policy to the local computer's QoS store.
+        // Catch errors inside PowerShell and return plain text: redirected Windows
+        // PowerShell error streams otherwise emit opaque "#< CLIXML" records.
         var script = $@"
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
@@ -1136,31 +1141,67 @@ $InformationPreference = 'SilentlyContinue'
 $upName = '{upName}'
 $downName = '{downName}'
 $ipPrefix = '{ipPrefix}'
-Import-Module NetQos -ErrorAction Stop
-Remove-NetQosPolicy -Name $upName -PolicyStore PersistentStore -Confirm:$false -ErrorAction SilentlyContinue
-Remove-NetQosPolicy -Name $downName -PolicyStore PersistentStore -Confirm:$false -ErrorAction SilentlyContinue
-New-NetQosPolicy -Name $downName -IPDstPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond {downloadBits} -PolicyStore PersistentStore -ErrorAction Stop | Out-Null
-New-NetQosPolicy -Name $upName -IPSrcPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond {uploadBits} -PolicyStore PersistentStore -ErrorAction Stop | Out-Null
-Get-NetQosPolicy -Name $upName,$downName -PolicyStore PersistentStore -ErrorAction Stop | Out-Null
+try {{
+    Import-Module NetQos -ErrorAction Stop
+
+    Remove-NetQosPolicy -Name $upName -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-NetQosPolicy -Name $downName -Confirm:$false -ErrorAction SilentlyContinue
+
+    New-NetQosPolicy -Name $downName -IPDstPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond ([UInt64]{downloadBits}) -ErrorAction Stop | Out-Null
+    New-NetQosPolicy -Name $upName -IPSrcPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond ([UInt64]{uploadBits}) -ErrorAction Stop | Out-Null
+
+    $null = Get-NetQosPolicy -Name $downName -ErrorAction Stop
+    $null = Get-NetQosPolicy -Name $upName -ErrorAction Stop
+    [Console]::Out.WriteLine('MARKHOTSPOT_OK')
+    exit 0
+}}
+catch {{
+    $message = $_.Exception.Message
+    try {{ Remove-NetQosPolicy -Name $upName -Confirm:$false -ErrorAction SilentlyContinue }} catch {{}}
+    try {{ Remove-NetQosPolicy -Name $downName -Confirm:$false -ErrorAction SilentlyContinue }} catch {{}}
+    [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + $message)
+    exit 1
+}}
 ";
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
-        var psi = new ProcessStartInfo("powershell.exe", "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
-        { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8 };
-        using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar PowerShell para configurar QoS.");
-        // Read both streams concurrently to avoid a blocked child process on full pipes.
+        var psi = new ProcessStartInfo("powershell.exe",
+            "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8,
+            StandardErrorEncoding = Encoding.UTF8
+        };
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("No se pudo iniciar PowerShell para configurar QoS.");
+
         var stdoutTask = process.StandardOutput.ReadToEndAsync();
         var stderrTask = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
+        if (!process.WaitForExit(30000))
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            throw new TimeoutException("Windows tardó demasiado en configurar las políticas QoS.");
+        }
         Task.WaitAll(stdoutTask, stderrTask);
+
         var stdout = stdoutTask.Result.Trim();
         var stderr = stderrTask.Result.Trim();
-        if (process.ExitCode != 0)
+        if (process.ExitCode != 0 || !stdout.Contains("MARKHOTSPOT_OK", StringComparison.Ordinal))
         {
-            var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
+            var marker = Regex.Match(stdout, @"MARKHOTSPOT_ERROR:\s*(.+)", RegexOptions.Singleline);
+            var detail = marker.Success ? marker.Groups[1].Value.Trim()
+                : !string.IsNullOrWhiteSpace(stdout) ? stdout
+                : !string.IsNullOrWhiteSpace(stderr) ? stderr
+                : "PowerShell terminó con el código " + process.ExitCode + " sin devolver un mensaje legible.";
+
+            // Do not display PowerShell's serialized CLIXML wrapper to the user.
             detail = Regex.Replace(detail, @"(?s)<Objs\b.*?</Objs>", "").Trim();
-            if (string.IsNullOrWhiteSpace(detail))
-                detail = "PowerShell terminó con el código " + process.ExitCode + " sin devolver un mensaje de error legible.";
-            throw new InvalidOperationException("Windows no pudo instalar las políticas QoS (código " + process.ExitCode + "): " + Short(detail));
+            if (string.IsNullOrWhiteSpace(detail)) detail = "Windows no proporcionó detalles adicionales.";
+            throw new InvalidOperationException("Windows no pudo instalar las políticas QoS (código " +
+                process.ExitCode + "): " + Short(detail));
         }
     }
 
