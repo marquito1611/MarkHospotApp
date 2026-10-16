@@ -1122,7 +1122,7 @@ Get-NetQosPolicy -Name $upName,$downName -PolicyStore PersistentStore -ErrorActi
         if (process.ExitCode != 0)
         {
             var detail = string.IsNullOrWhiteSpace(stderr) ? stdout : stderr;
-            detail = Regex.Replace(detail, @"(?s)<Objs\\b.*?</Objs>", "").Trim();
+            detail = Regex.Replace(detail, @"(?s)<Objs\b.*?</Objs>", "").Trim();
             if (string.IsNullOrWhiteSpace(detail))
                 detail = "PowerShell terminó con el código " + process.ExitCode + " sin devolver un mensaje de error legible.";
             throw new InvalidOperationException("Windows no pudo instalar las políticas QoS (código " + process.ExitCode + "): " + Short(detail));
