@@ -10,30 +10,51 @@ internal static class WfpDeviceBlocker
 {
     private static readonly Guid InboundIpv4Layer = new("C86FD1BF-21CD-497E-A0BB-17425C885C58");
     private static readonly Guid ForwardIpv4Layer = new("A82ACC24-4EE1-4EE1-B465-FD1D25CB10A4");
+
     private static readonly Guid RemoteAddressCondition = new("B235AE9A-1D64-49B8-A44C-5FF3D9095045");
     private static readonly Guid InterfaceIndexCondition = new("667FD755-D695-434A-8AF5-D3835A1259BC");
+    private static readonly Guid ForwardSourceAddressCondition = new("AE96897E-2E94-4BC9-B313-B27EE80E574D");
+    private static readonly Guid ForwardDestinationAddressCondition = new("2D79133B-B390-45C6-8699-ACACEAAFED33");
+    private static readonly Guid SourceInterfaceIndexCondition = new("2311334D-C92D-45BF-9496-EDF447820E2D");
+    private static readonly Guid DestinationInterfaceIndexCondition = new("35CF6522-4139-45EE-A0D5-67B80949D879");
     private static readonly Guid UniversalSublayer = new("EEBECC03-CED4-4380-819A-2734397B2B74");
 
-    public static void Block(string ipAddress, uint interfaceIndex)
+    public static void Block(string ipAddress, uint hotspotInterfaceIndex)
     {
         if (!IPAddress.TryParse(ipAddress, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             throw new ArgumentException("Se necesita una dirección IPv4 válida.", nameof(ipAddress));
 
-        var status = FwpmEngineOpen0(IntPtr.Zero, 10, IntPtr.Zero, IntPtr.Zero, out var engine);
-        ThrowIfFailed(status, "No se pudo abrir Windows Filtering Platform");
+        var installed = new List<Guid>();
+        var engineStatus = FwpmEngineOpen0(IntPtr.Zero, 10, IntPtr.Zero, IntPtr.Zero, out var engine);
+        ThrowIfFailed(engineStatus, "No se pudo abrir Windows Filtering Platform");
+
         try
         {
-            AddBlockFilter(engine, ip, interfaceIndex, InboundIpv4Layer, "inbound");
-            try
+            // Client-originated packets entering the host through the hotspot interface.
+            AddBlockFilter(engine, ip, InboundIpv4Layer, "inbound", RemoteAddressCondition,
+                InterfaceIndexCondition, hotspotInterfaceIndex);
+            installed.Add(CreateFilterKey(ip.ToString(), "inbound"));
+
+            // Forwarded upload packets: the client is the source and its traffic enters
+            // through the hotspot interface. IPFORWARD_V4 has layer-specific conditions;
+            // using IP_REMOTE_ADDRESS / INTERFACE_INDEX here makes FwpmFilterAdd fail.
+            AddBlockFilter(engine, ip, ForwardIpv4Layer, "forward-upload", ForwardSourceAddressCondition,
+                SourceInterfaceIndexCondition, hotspotInterfaceIndex);
+            installed.Add(CreateFilterKey(ip.ToString(), "forward-upload"));
+
+            // Forwarded download packets: the client is the destination and its traffic
+            // leaves through the hotspot interface.
+            AddBlockFilter(engine, ip, ForwardIpv4Layer, "forward-download", ForwardDestinationAddressCondition,
+                DestinationInterfaceIndexCondition, hotspotInterfaceIndex);
+            installed.Add(CreateFilterKey(ip.ToString(), "forward-download"));
+        }
+        catch
+        {
+            foreach (var key in installed)
             {
-                // Also filter the forwarding path so return/download packets for this client are discarded.
-                AddBlockFilter(engine, ip, interfaceIndex, ForwardIpv4Layer, "forward");
+                try { DeleteIfPresent(engine, key); } catch { }
             }
-            catch
-            {
-                DeleteIfPresent(engine, CreateFilterKey(ipAddress, "inbound"));
-                throw;
-            }
+            throw;
         }
         finally { FwpmEngineClose0(engine); }
     }
@@ -45,24 +66,32 @@ internal static class WfpDeviceBlocker
         try
         {
             DeleteIfPresent(engine, CreateFilterKey(ipAddress, "inbound"));
+            DeleteIfPresent(engine, CreateFilterKey(ipAddress, "forward-upload"));
+            DeleteIfPresent(engine, CreateFilterKey(ipAddress, "forward-download"));
+            // Remove filters created by earlier builds.
             DeleteIfPresent(engine, CreateFilterKey(ipAddress, "forward"));
-            // Remove the single inbound filter used by pre-cache versions of MarkHotspot.
             DeleteIfPresent(engine, CreateLegacyFilterKey(ipAddress));
         }
         finally { FwpmEngineClose0(engine); }
     }
 
-    private static void AddBlockFilter(IntPtr engine, IPAddress ip, uint interfaceIndex, Guid layer, string direction)
+    private static void AddBlockFilter(
+        IntPtr engine, IPAddress ip, Guid layer, string direction,
+        Guid addressCondition, Guid interfaceCondition, uint interfaceIndex)
     {
         var key = CreateFilterKey(ip.ToString(), direction);
         DeleteIfPresent(engine, key);
 
         var ipBytes = ip.GetAddressBytes();
-        var addressMask = new FwpV4AddressAndMask { Address = BitConverter.ToUInt32(ipBytes, 0), Mask = uint.MaxValue };
+        var addressMask = new FwpV4AddressAndMask
+        {
+            Address = BitConverter.ToUInt32(ipBytes, 0),
+            Mask = uint.MaxValue
+        };
         var maskPointer = Marshal.AllocHGlobal(Marshal.SizeOf<FwpV4AddressAndMask>());
         var conditionsPointer = IntPtr.Zero;
         var name = Marshal.StringToHGlobalUni("MarkHotspot bloquea " + ip + " (" + direction + ")");
-        var description = Marshal.StringToHGlobalUni("Filtro persistente de MarkHotspot para el tráfico IPv4 del cliente en la interfaz del hotspot.");
+        var description = Marshal.StringToHGlobalUni("Filtro persistente de MarkHotspot para bloquear el tráfico IPv4 del cliente conectado al hotspot.");
         try
         {
             Marshal.StructureToPtr(addressMask, maskPointer, false);
@@ -70,17 +99,18 @@ internal static class WfpDeviceBlocker
             {
                 new FwpmFilterCondition
                 {
-                    FieldKey = RemoteAddressCondition,
-                    MatchType = 0,
-                    ConditionValue = new FwpConditionValue { Type = 19, V4AddressMask = maskPointer }
+                    FieldKey = addressCondition,
+                    MatchType = 0, // FWP_MATCH_EQUAL
+                    ConditionValue = new FwpConditionValue { Type = 19, V4AddressMask = maskPointer } // FWP_V4_ADDR_MASK
                 },
                 new FwpmFilterCondition
                 {
-                    FieldKey = InterfaceIndexCondition,
+                    FieldKey = interfaceCondition,
                     MatchType = 0,
-                    ConditionValue = new FwpConditionValue { Type = 3, UInt32 = interfaceIndex }
+                    ConditionValue = new FwpConditionValue { Type = 3, UInt32 = interfaceIndex } // FWP_UINT32
                 }
             };
+
             var conditionSize = Marshal.SizeOf<FwpmFilterCondition>();
             conditionsPointer = Marshal.AllocHGlobal(conditionSize * conditions.Length);
             for (var i = 0; i < conditions.Length; i++)
@@ -96,10 +126,10 @@ internal static class WfpDeviceBlocker
                 Weight = new FwpValue { Type = 0 },
                 NumberOfFilterConditions = (uint)conditions.Length,
                 FilterConditions = conditionsPointer,
-                Action = new FwpmAction { Type = 0x1001 }
+                Action = new FwpmAction { Type = 0x1001 } // FWP_ACTION_BLOCK
             };
-            var status = FwpmFilterAdd0(engine, ref filter, IntPtr.Zero, out _);
-            ThrowIfFailed(status, "Windows no pudo instalar el filtro de bloqueo " + direction);
+            var addStatus = FwpmFilterAdd0(engine, ref filter, IntPtr.Zero, out _);
+            ThrowIfFailed(addStatus, "Windows no pudo instalar el filtro de bloqueo " + direction);
         }
         finally
         {
@@ -131,7 +161,8 @@ internal static class WfpDeviceBlocker
 
     private static void ThrowIfFailed(uint status, string message)
     {
-        if (status != 0) throw new Win32Exception(unchecked((int)status), message + $" (código 0x{status:X8}).");
+        if (status != 0)
+            throw new Win32Exception(unchecked((int)status), message + $" (código 0x{status:X8}).");
     }
 
     [DllImport("fwpuclnt.dll", CharSet = CharSet.Unicode)]
