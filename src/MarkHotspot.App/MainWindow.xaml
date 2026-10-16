@@ -240,6 +240,15 @@
                     <TextBlock Text="Ajustes del punto de acceso" Foreground="{DynamicResource MutedBrush}" Margin="0,5,0,22"/>
                     <Border Background="{DynamicResource PanelBrush}" CornerRadius="16" Padding="22" Margin="0,16,0,0">
                         <StackPanel>
+                            <TextBlock Text="Método del hotspot" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
+                            <TextBlock Text="Elige cómo crear la red Wi-Fi. Hosted Network depende de que el controlador antiguo lo admita; ICS usa Hosted Network y comparte Internet mediante Windows." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
+                            <ComboBox x:Name="HotspotMethodCombo" SelectedValuePath="Tag" SelectionChanged="HotspotMethodCombo_SelectionChanged" MinHeight="42" Padding="10" Margin="0,0,0,8">
+                                <ComboBoxItem Content="Mobile Hotspot (WinRT) — recomendado" Tag="MobileHotspot"/>
+                                <ComboBoxItem Content="Hosted Network (netsh) — clásico" Tag="HostedNetwork"/>
+                                <ComboBoxItem Content="Hosted Network + ICS — compatibilidad" Tag="HostedNetworkIcs"/>
+                            </ComboBox>
+                            <TextBlock x:Name="HotspotMethodStatusText" Text="El método elegido se aplicará la próxima vez que inicies el hotspot." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,18"/>
+                            <Separator Margin="0,0,0,16"/>
                             <TextBlock Text="Inicio automático" FontSize="20" FontWeight="Bold" Margin="0,0,0,6"/>
                             <TextBlock Text="Iniciar MarkHotspot automáticamente al entrar en Windows." Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,12"/>
                             <Grid Margin="0,0,0,16">
