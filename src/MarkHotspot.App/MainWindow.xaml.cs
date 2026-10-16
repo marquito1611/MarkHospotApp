@@ -1150,12 +1150,17 @@ public partial class MainWindow : Window
 
             var activeProfile = NetworkInformation.GetInternetConnectionProfile();
             var activeSourceId = activeProfile?.NetworkAdapter.NetworkAdapterId.ToString("D");
-            if (string.IsNullOrWhiteSpace(_settings.SelectedInternetAdapterId) ||
+            var migratingLegacySourceSelection = string.IsNullOrWhiteSpace(_settings.SelectedInternetAdapterId);
+            if (migratingLegacySourceSelection ||
                 !rows.Any(row => row.Id.Equals(_settings.SelectedInternetAdapterId, StringComparison.OrdinalIgnoreCase)))
                 _settings.SelectedInternetAdapterId = activeSourceId ?? rows.FirstOrDefault(row => row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))?.Id ?? "";
 
+            // Older builds defaulted the hotspot output adapter to the active Internet adapter.
+            // On dual-Wi-Fi PCs, migrate that automatic choice to a different Wi-Fi adapter.
             if (string.IsNullOrWhiteSpace(_settings.SelectedHotspotAdapterId) ||
-                !rows.Any(row => row.Id.Equals(_settings.SelectedHotspotAdapterId, StringComparison.OrdinalIgnoreCase)))
+                !rows.Any(row => row.Id.Equals(_settings.SelectedHotspotAdapterId, StringComparison.OrdinalIgnoreCase)) ||
+                (migratingLegacySourceSelection && rows.Count > 1 &&
+                 _settings.SelectedHotspotAdapterId.Equals(activeSourceId, StringComparison.OrdinalIgnoreCase)))
             {
                 var sourceId = _settings.SelectedInternetAdapterId;
                 var preferred = rows.FirstOrDefault(row => !row.Id.Equals(sourceId, StringComparison.OrdinalIgnoreCase) && row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))
