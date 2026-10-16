@@ -1594,7 +1594,7 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
             if (!sharing.Success)
                 return (false, "El hotspot está activo, pero no se pudo configurar el paso de Internet a la interfaz local: " + sharing.Message);
 
-            return (true, $"Hotspot activo con «{ssid}». Internet: {GetSelectedInternetDisplayName()}. ICS quedó configurado hacia la interfaz virtual del hotspot.");
+            return (true, $"Hotspot activo con «{ssid}». Adaptador de salida: {selectedHotspotAdapter.DisplayName}. Internet recibida desde: {GetSelectedInternetDisplayName()}.");
         }
         catch (Exception ex)
         {
