@@ -33,10 +33,10 @@ jobs:
       - name: Verify published executable
         shell: pwsh
         run: |
-          $exe = Join-Path "artifacts/MarkHotspot" "MarkHotspot.App.exe"
+          $exe = Join-Path "artifacts/MarkHotspot" "MarkHotspot.exe"
           if (!(Test-Path $exe)) {
             Get-ChildItem "artifacts/MarkHotspot" -Recurse | Select-Object FullName
-            throw "No se encontró MarkHotspot.App.exe en la publicación."
+            throw "No se encontró MarkHotspot.exe en la publicación."
           }
           Get-Item $exe | Select-Object FullName, Length
 
