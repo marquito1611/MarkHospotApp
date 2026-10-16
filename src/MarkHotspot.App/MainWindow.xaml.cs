@@ -2451,17 +2451,30 @@ catch {{
     {
         if (nic.NetworkInterfaceType == NetworkInterfaceType.Loopback || nic.NetworkInterfaceType == NetworkInterfaceType.Tunnel)
             return false;
+
         var name = nic.Name;
         var description = nic.Description;
         var localAddress = nic.GetIPProperties().UnicastAddresses.Any(address =>
             address.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
             (address.Address.ToString() == "192.168.137.1" || IsPrivateIPv4(address.Address.ToString())));
-        var looksVirtual = name.Contains("Local Area Connection", StringComparison.OrdinalIgnoreCase) ||
-            name.Contains("Conexión de área local", StringComparison.OrdinalIgnoreCase) ||
-            name.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase) ||
-            description.Contains("Microsoft Wi-Fi Direct", StringComparison.OrdinalIgnoreCase) ||
-            description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase);
-        return nic.OperationalStatus == OperationalStatus.Up && localAddress && looksVirtual;
+
+        // Hosted Network creates its virtual interface only after "netsh wlan start
+        // hostednetwork". Before ICS is enabled, that interface may not have any IPv4
+        // address yet. Requiring a private address here creates a circular dependency:
+        // ICS is what normally assigns the address we were waiting for.
+        var hostedNetworkAdapter =
+            description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("Local Area Connection*", StringComparison.OrdinalIgnoreCase) ||
+            name.Contains("Conexión de área local*", StringComparison.OrdinalIgnoreCase);
+
+        // Wi-Fi Direct interfaces are used by other Windows features too, so only accept
+        // them when they already have a private IPv4. Prefer the explicit legacy Hosted
+        // Network adapter even before ICS has assigned its address.
+        var looksWifiDirect = name.Contains("Wi-Fi Direct", StringComparison.OrdinalIgnoreCase) ||
+            description.Contains("Microsoft Wi-Fi Direct", StringComparison.OrdinalIgnoreCase);
+
+        return nic.OperationalStatus == OperationalStatus.Up &&
+            (hostedNetworkAdapter || (localAddress && looksWifiDirect));
     }
 
     private static bool NamesMatchAdapter(string connectionName, string deviceName, NetworkInterface nic) =>
