@@ -906,8 +906,22 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
                 {
                     try
                     {
-                        var blockInterface = FindHotspotInterfaceIndex(device.Ip);
-                        if (blockInterface is not null) WfpDeviceBlocker.Block(device.Ip, blockInterface.Value);
+                        var blockInterface = await FindHotspotInterfaceIndexAsync(device.Ip, mac);
+                        if (blockInterface is not null)
+                        {
+                            var blockedEntry = _settings.BlockedDevices.FirstOrDefault(b =>
+                                b.Ip.Equals(device.Ip, StringComparison.OrdinalIgnoreCase) ||
+                                b.Mac.Equals(mac, StringComparison.OrdinalIgnoreCase));
+                            var currentIpv6 = await GetIpv6NeighborsForMacAsync(mac, blockInterface.Value);
+                            var allIpv6 = (blockedEntry?.Ipv6Addresses ?? new List<string>())
+                                .Concat(currentIpv6).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+                            WfpDeviceBlocker.Block(device.Ip, blockInterface.Value, allIpv6);
+                            if (blockedEntry is not null)
+                            {
+                                blockedEntry.Ipv6Addresses = allIpv6;
+                                SaveSettings();
+                            }
+                        }
                         else _appliedBlockFilters.Remove(device.Ip);
                     }
                     catch { _appliedBlockFilters.Remove(device.Ip); }
@@ -1718,12 +1732,16 @@ catch {{
         {
             try
             {
+                var currentInterface = await FindHotspotInterfaceIndexAsync(selected.Ip, selected.Mac);
+                var currentIpv6 = currentInterface is uint index
+                    ? await GetIpv6NeighborsForMacAsync(selected.Mac, index)
+                    : new List<string>();
                 foreach (var entry in matchingEntries)
                 {
-                    WfpDeviceBlocker.Unblock(entry.Ip);
+                    WfpDeviceBlocker.Unblock(entry.Ip, entry.Ipv6Addresses.Concat(currentIpv6));
                     _appliedBlockFilters.Remove(entry.Ip);
                 }
-                WfpDeviceBlocker.Unblock(selected.Ip);
+                WfpDeviceBlocker.Unblock(selected.Ip, matchingEntries.SelectMany(b => b.Ipv6Addresses).Concat(currentIpv6));
                 _appliedBlockFilters.Remove(selected.Ip);
                 _settings.BlockedDevices.RemoveAll(b =>
                     b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
@@ -1745,7 +1763,7 @@ catch {{
             return;
         }
 
-        var interfaceIndex = FindHotspotInterfaceIndex(selected.Ip);
+        var interfaceIndex = await FindHotspotInterfaceIndexAsync(selected.Ip, selected.Mac);
         if (interfaceIndex is null)
         {
             SetStatus("No se encontró la interfaz del hotspot para este dispositivo. Actualiza la lista y vuelve a intentarlo.");
@@ -1754,12 +1772,15 @@ catch {{
 
         try
         {
-            // Drop incoming IPv4 packets at Windows Filtering Platform before they can be forwarded by Internet Connection Sharing.
-            WfpDeviceBlocker.Block(selected.Ip, interfaceIndex.Value);
+            // Resolve the exact client IPv6 neighbor addresses too. IPv4-only blocking
+            // leaves a route around the rule when the client uses IPv6.
+            var ipv6Addresses = await GetIpv6NeighborsForMacAsync(selected.Mac, interfaceIndex.Value);
+            WfpDeviceBlocker.Block(selected.Ip, interfaceIndex.Value, ipv6Addresses);
             var entry = new BlockedDevice
             {
                 Ip = selected.Ip,
                 Mac = selected.Mac,
+                Ipv6Addresses = ipv6Addresses,
                 AddedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm")
             };
             _settings.BlockedDevices.Add(entry);
@@ -1767,7 +1788,7 @@ catch {{
             catch
             {
                 _settings.BlockedDevices.Remove(entry);
-                WfpDeviceBlocker.Unblock(selected.Ip);
+                WfpDeviceBlocker.Unblock(selected.Ip, ipv6Addresses);
                 throw;
             }
 
@@ -1785,8 +1806,32 @@ catch {{
         }
     }
 
-    private static uint? FindHotspotInterfaceIndex(string clientIp)
+    private static async Task<uint?> FindHotspotInterfaceIndexAsync(string clientIp, string? clientMac)
     {
+        // Resolve the interface from the exact ARP neighbor entry first. Several
+        // "Local Area Connection" adapters can share the hotspot subnet; selecting
+        // the first matching subnet can install a valid filter on the wrong interface.
+        if (IPAddress.TryParse(clientIp, out var parsed) &&
+            parsed.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork &&
+            !string.IsNullOrWhiteSpace(clientMac))
+        {
+            var mac = Regex.Replace(clientMac, "[^A-Fa-f0-9]", "").ToUpperInvariant();
+            var script = "$ErrorActionPreference='SilentlyContinue'; " +
+                "$n=Get-NetNeighbor -AddressFamily IPv4 -IPAddress '" + parsed + "' | " +
+                "Where-Object {($_.LinkLayerAddress -replace '[-:]','').ToUpperInvariant() -eq '" + mac + "' -and $_.State -ne 'Unreachable'} | " +
+                "Select-Object -First 1; if ($n) { [Console]::WriteLine([int]$n.InterfaceIndex) }";
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            var result = await RunProcessAsync("powershell.exe",
+                "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded);
+            foreach (var line in result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                if (uint.TryParse(line.Trim(), out var exactIndex) && exactIndex > 0)
+                    return exactIndex;
+
+            // Do not silently fall back to an arbitrary same-subnet adapter when a MAC
+            // was supplied: that creates a false-positive "blocked" state.
+            return null;
+        }
+
         foreach (var adapter in NetworkInterface.GetAllNetworkInterfaces()
                      .Where(n => n.OperationalStatus == OperationalStatus.Up))
         {
@@ -1800,6 +1845,30 @@ catch {{
             }
         }
         return null;
+    }
+
+    private static async Task<List<string>> GetIpv6NeighborsForMacAsync(string? clientMac, uint interfaceIndex)
+    {
+        if (string.IsNullOrWhiteSpace(clientMac) || interfaceIndex == 0) return new List<string>();
+        var mac = Regex.Replace(clientMac, "[^A-Fa-f0-9]", "").ToUpperInvariant();
+        var script = "$ErrorActionPreference='SilentlyContinue'; " +
+            "Get-NetNeighbor -AddressFamily IPv6 -InterfaceIndex " + interfaceIndex + " | " +
+            "Where-Object {($_.LinkLayerAddress -replace '[-:]','').ToUpperInvariant() -eq '" + mac + "' -and $_.State -ne 'Unreachable'} | " +
+            "Select-Object -ExpandProperty IPAddress";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        var result = await RunProcessAsync("powershell.exe",
+            "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded);
+        var addresses = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!IPAddress.TryParse(line.Trim(), out var address) ||
+                address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6 ||
+                address.IsIPv6Multicast || address.Equals(IPAddress.IPv6Any) || address.Equals(IPAddress.IPv6Loopback))
+                continue;
+            // Drop the zone ID from link-local addresses; WFP matches the 128-bit address.
+            addresses.Add(new IPAddress(address.GetAddressBytes()).ToString());
+        }
+        return addresses.ToList();
     }
 
     private async Task<(int ExitCode, string Output)> RunNetshAsync(string arguments) =>
@@ -2782,6 +2851,7 @@ catch {{
     {
         public string Ip { get; set; } = "";
         public string Mac { get; set; } = "";
+        public List<string> Ipv6Addresses { get; set; } = new();
         public string AddedAt { get; set; } = "";
     }
 }
