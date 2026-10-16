@@ -48,7 +48,7 @@ public partial class MainWindow : Window
     private bool _allowExit;
     private bool _exitInProgress;
     private readonly DispatcherTimer _hotspotStateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
-    private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(2) };
+    private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(1) };
     private bool _deviceScanInProgress;
     private bool _npcapInstallAttempted;
     private bool _hotspotOperationInProgress;
