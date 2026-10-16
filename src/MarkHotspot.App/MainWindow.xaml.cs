@@ -654,11 +654,22 @@ public partial class MainWindow : Window
 
             foreach (var row in _devices)
             {
-                if (found.ContainsKey(row.Mac) || connectedMacs.Contains(row.Mac)) continue;
+                if (found.ContainsKey(row.Mac)) continue;
+                if (connectedMacs.Contains(row.Mac))
+                {
+                    row.State = "Conectado";
+                    _deviceMissedScans[row.Mac] = 0;
+                    _deviceUnconfirmedScans[row.Mac] = 0;
+                    continue;
+                }
                 _deviceMissedScans.TryGetValue(row.Mac, out var missedScans);
                 missedScans++;
                 _deviceMissedScans[row.Mac] = missedScans;
-                if (missedScans >= 4) row.State = "Desconectado";
+                if (missedScans >= 4)
+                {
+                    row.State = "Desconectado";
+                    _deviceUnconfirmedScans[row.Mac] = 0;
+                }
             }
 
             // Keep existing DeviceRow objects in place. Clearing and rebuilding the
