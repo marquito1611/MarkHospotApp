@@ -34,6 +34,7 @@ public partial class MainWindow : Window
     private readonly Dictionary<string, int> _deviceMissedScans = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, int> _deviceUnconfirmedScans = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _appliedBlockFilters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _temporarilyRemovedDevices = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -642,6 +643,34 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
         }
     }
     private void RenameDeviceButton_Click(object sender, RoutedEventArgs e) => RenameSelectedDevice();
+
+    private void RemoveDeviceButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (DevicesList.SelectedItem is not DeviceRow selected)
+        {
+            SetStatus("Selecciona un dispositivo de la lista antes de eliminarlo.");
+            return;
+        }
+
+        var mac = selected.Mac.Trim().Replace("-", ":").ToUpperInvariant();
+        _temporarilyRemovedDevices.Add(mac);
+        _deviceMissedScans[mac] = 0;
+        _deviceUnconfirmedScans.Remove(mac);
+        _devices.Remove(selected);
+        _devicesByMac.Remove(mac);
+        DevicesList.SelectedItem = null;
+        DevicesCountText.Text = _devices.Count.ToString();
+        try
+        {
+            PersistDeviceCache();
+            SaveSettings();
+        }
+        catch (Exception ex) { SetStatus("El dispositivo se quitó de la lista, pero no se pudo guardar el cambio: " + ex.Message); }
+        UpdateBlockButton();
+        SyncTrafficLimitRows();
+        SetStatus("Dispositivo eliminado de la lista. No se ha bloqueado; podrá conectarse normalmente y volverá a aparecer después de desconectarse y reconectarse.");
+    }
+
     private void LimitDeviceTrafficButton_Click(object sender, RoutedEventArgs e) => ConfigureSelectedDeviceTraffic();
 
     private async void StartButton_Click(object sender, RoutedEventArgs e)
@@ -778,6 +807,11 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
             foreach (var device in found.Values)
             {
                 var mac = device.Mac.ToUpperInvariant();
+                if (_temporarilyRemovedDevices.Contains(mac))
+                {
+                    _deviceMissedScans[mac] = 0;
+                    continue;
+                }
                 if (!_devicesByMac.TryGetValue(mac, out var row))
                 {
                     var name = await ResolveDeviceNameAsync(device.Ip, mac);
@@ -824,6 +858,27 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
                 {
                     savedLimit.Ip = device.Ip;
                     try { ApplyWindowsQosPolicies(savedLimit); SaveSettings(); } catch { }
+                }
+            }
+
+            // Keep manually removed devices hidden while they still appear online.
+            // Four consecutive scans without ARP or hosted-network confirmation clear the temporary removal,
+            // so a later reconnection can add the device to the list again.
+            foreach (var mac in _temporarilyRemovedDevices.ToList())
+            {
+                if (found.ContainsKey(mac) || connectedMacs.Contains(mac))
+                {
+                    _deviceMissedScans[mac] = 0;
+                    continue;
+                }
+                _deviceMissedScans.TryGetValue(mac, out var hiddenMisses);
+                hiddenMisses++;
+                _deviceMissedScans[mac] = hiddenMisses;
+                if (hiddenMisses >= 4)
+                {
+                    _temporarilyRemovedDevices.Remove(mac);
+                    _deviceMissedScans.Remove(mac);
+                    _deviceUnconfirmedScans.Remove(mac);
                 }
             }
 
@@ -1478,6 +1533,7 @@ catch {{
         var selected = DevicesList.SelectedItem as DeviceRow;
         BlockDeviceButton.IsEnabled = selected is not null;
         RenameDeviceButton.IsEnabled = selected is not null;
+        RemoveDeviceButton.IsEnabled = selected is not null;
         LimitDeviceTrafficButton.IsEnabled = selected is not null;
         BlockDeviceButton.Content = selected is not null && IsBlockedDevice(selected.Mac, selected.Ip) ? "Desbloquear dispositivo" : "Bloquear dispositivo";
     }
