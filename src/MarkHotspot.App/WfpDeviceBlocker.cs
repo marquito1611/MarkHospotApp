@@ -11,6 +11,7 @@ internal static class WfpDeviceBlocker
 {
     private static readonly Guid InboundIpv4Layer = new("C86FD1BF-21CD-497E-A0BB-17425C885C58");
     private static readonly Guid ForwardIpv4Layer = new("A82ACC24-4EE1-4EE1-B465-FD1D25CB10A4");
+    private static readonly Guid ForwardIpv6Layer = new("7B964818-19C7-493A-BE3B-7A4D59D1C32C");
 
     private static readonly Guid RemoteAddressCondition = new("B235AE9A-1D64-49B8-A44C-5FF3D9095045");
     private static readonly Guid InterfaceIndexCondition = new("667FD755-D695-434A-8AF5-D3835A1259BC");
@@ -20,7 +21,7 @@ internal static class WfpDeviceBlocker
     private static readonly Guid DestinationInterfaceIndexCondition = new("35CF6522-4139-45EE-A0D5-67B80949D879");
     private static readonly Guid UniversalSublayer = new("EEBECC03-CED4-4380-819A-2734397B2B74");
 
-    public static void Block(string ipAddress, uint hotspotInterfaceIndex)
+    public static void Block(string ipAddress, uint hotspotInterfaceIndex, IEnumerable<string>? ipv6Addresses = null)
     {
         if (!IPAddress.TryParse(ipAddress, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             throw new ArgumentException("Se necesita una dirección IPv4 válida.", nameof(ipAddress));
@@ -48,6 +49,24 @@ internal static class WfpDeviceBlocker
             AddBlockFilter(engine, ip, ForwardIpv4Layer, "forward-download", ForwardDestinationAddressCondition,
                 DestinationInterfaceIndexCondition, hotspotInterfaceIndex);
             installed.Add(CreateFilterKey(ip.ToString(), "forward-download"));
+
+            // IPv6 must be filtered separately: IPv4-only rules do not stop a client
+            // that has an IPv6 address and routes Internet traffic over IPv6.
+            foreach (var addressText in (ipv6Addresses ?? Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                if (!IPAddress.TryParse(addressText, out var ipv6) ||
+                    ipv6.AddressFamily != System.Net.Sockets.AddressFamily.InterNetworkV6 ||
+                    ipv6.IsIPv6Multicast || ipv6.Equals(IPAddress.IPv6Any) || ipv6.Equals(IPAddress.IPv6Loopback))
+                    continue;
+
+                AddBlockFilterV6(engine, ipv6, "forward-upload", ForwardSourceAddressCondition,
+                    SourceInterfaceIndexCondition, hotspotInterfaceIndex);
+                installed.Add(CreateFilterKey(ipv6.ToString(), "v6-forward-upload"));
+
+                AddBlockFilterV6(engine, ipv6, "forward-download", ForwardDestinationAddressCondition,
+                    DestinationInterfaceIndexCondition, hotspotInterfaceIndex);
+                installed.Add(CreateFilterKey(ipv6.ToString(), "v6-forward-download"));
+            }
         }
         catch
         {
@@ -60,7 +79,7 @@ internal static class WfpDeviceBlocker
         finally { FwpmEngineClose0(engine); }
     }
 
-    public static void Unblock(string ipAddress)
+    public static void Unblock(string ipAddress, IEnumerable<string>? ipv6Addresses = null)
     {
         var status = FwpmEngineOpen0(IntPtr.Zero, 10, IntPtr.Zero, IntPtr.Zero, out var engine);
         ThrowIfFailed(status, "No se pudo abrir Windows Filtering Platform");
@@ -72,6 +91,11 @@ internal static class WfpDeviceBlocker
             // Remove filters created by earlier builds.
             DeleteIfPresent(engine, CreateFilterKey(ipAddress, "forward"));
             DeleteIfPresent(engine, CreateLegacyFilterKey(ipAddress));
+            foreach (var address in (ipv6Addresses ?? Array.Empty<string>()).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                DeleteIfPresent(engine, CreateFilterKey(address, "v6-forward-upload"));
+                DeleteIfPresent(engine, CreateFilterKey(address, "v6-forward-download"));
+            }
         }
         finally { FwpmEngineClose0(engine); }
     }
@@ -144,6 +168,70 @@ internal static class WfpDeviceBlocker
         }
     }
 
+    private static void AddBlockFilterV6(
+        IntPtr engine, IPAddress ip, string direction,
+        Guid addressCondition, Guid interfaceCondition, uint interfaceIndex)
+    {
+        var key = CreateFilterKey(ip.ToString(), "v6-" + direction);
+        DeleteIfPresent(engine, key);
+
+        var addressMask = new FwpV6AddressAndMask
+        {
+            Address = ip.GetAddressBytes(),
+            PrefixLength = 128
+        };
+        var maskPointer = Marshal.AllocHGlobal(Marshal.SizeOf<FwpV6AddressAndMask>());
+        var conditionsPointer = IntPtr.Zero;
+        var name = Marshal.StringToHGlobalUni("MarkHotspot bloquea IPv6 " + ip + " (" + direction + ")");
+        var description = Marshal.StringToHGlobalUni("Filtro WFP de reenvío IPv6 para bloquear el tráfico del cliente del hotspot.");
+        try
+        {
+            Marshal.StructureToPtr(addressMask, maskPointer, false);
+            var conditions = new[]
+            {
+                new FwpmFilterCondition
+                {
+                    FieldKey = addressCondition,
+                    MatchType = 0,
+                    ConditionValue = new FwpConditionValue { Type = 0x101, V6AddressMask = maskPointer }
+                },
+                new FwpmFilterCondition
+                {
+                    FieldKey = interfaceCondition,
+                    MatchType = 0,
+                    ConditionValue = new FwpConditionValue { Type = 3, UInt32 = interfaceIndex }
+                }
+            };
+
+            var conditionSize = Marshal.SizeOf<FwpmFilterCondition>();
+            conditionsPointer = Marshal.AllocHGlobal(conditionSize * conditions.Length);
+            for (var i = 0; i < conditions.Length; i++)
+                Marshal.StructureToPtr(conditions[i], IntPtr.Add(conditionsPointer, i * conditionSize), false);
+
+            var filter = new FwpmFilter
+            {
+                FilterKey = key,
+                DisplayData = new FwpmDisplayData { Name = name, Description = description },
+                Flags = 1,
+                LayerKey = ForwardIpv6Layer,
+                SubLayerKey = UniversalSublayer,
+                Weight = new FwpValue { Type = 0 },
+                NumberOfFilterConditions = (uint)conditions.Length,
+                FilterConditions = conditionsPointer,
+                Action = new FwpmAction { Type = 0x1001 }
+            };
+            var addStatus = FwpmFilterAdd0(engine, ref filter, IntPtr.Zero, out _);
+            ThrowIfFailed(addStatus, "Windows no pudo instalar el filtro de bloqueo IPv6 " + direction);
+        }
+        finally
+        {
+            if (conditionsPointer != IntPtr.Zero) Marshal.FreeHGlobal(conditionsPointer);
+            Marshal.FreeHGlobal(maskPointer);
+            Marshal.FreeHGlobal(name);
+            Marshal.FreeHGlobal(description);
+        }
+    }
+
     private static Guid CreateFilterKey(string ipAddress, string direction)
     {
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes("MarkHotspot-WFP-Block-" + direction + "-" + ipAddress));
@@ -195,9 +283,16 @@ internal static class WfpDeviceBlocker
         [FieldOffset(0)] public int Type;
         [FieldOffset(8)] public uint UInt32;
         [FieldOffset(8)] public IntPtr V4AddressMask;
+        [FieldOffset(8)] public IntPtr V6AddressMask;
     }
     [StructLayout(LayoutKind.Sequential)]
     private struct FwpV4AddressAndMask { public uint Address; public uint Mask; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct FwpV6AddressAndMask
+    {
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 16)] public byte[] Address;
+        public byte PrefixLength;
+    }
     [StructLayout(LayoutKind.Sequential)]
     private struct FwpmFilterCondition
     {
