@@ -466,11 +466,47 @@ public partial class MainWindow : Window
             if (ssid.Length is < 1 or > 32) { SetStatus("El nombre Wi-Fi debe tener entre 1 y 32 caracteres."); return; }
             if (password.Length is < 8 or > 63) { SetStatus("La contraseña debe tener entre 8 y 63 caracteres."); return; }
             if (password.Contains('"')) { SetStatus("La contraseña no puede contener comillas dobles en esta versión."); return; }
+            if (HotspotAdapterCombo.SelectedItem is not HotspotWifiAdapterRow selectedHotspot)
+            {
+                HotspotAdapterStatusText.Text = "El adaptador Wi-Fi elegido para emitir el hotspot no está disponible. Selecciona uno válido.";
+                HotspotStateText.Text = "Hotspot Detenido";
+                HotspotDetailText.Text = HotspotAdapterStatusText.Text;
+                return;
+            }
+            if (InternetAdapterCombo.SelectedItem is not HotspotWifiAdapterRow selectedInternet)
+            {
+                InternetAdapterStatusText.Text = "El adaptador elegido para recibir Internet no está disponible. Selecciona uno válido.";
+                HotspotStateText.Text = "Hotspot Detenido";
+                HotspotDetailText.Text = InternetAdapterStatusText.Text;
+                return;
+            }
+
+            var adapterSelectionChanged =
+                !selectedHotspot.Id.Equals(_settings.SelectedHotspotAdapterId, StringComparison.OrdinalIgnoreCase) ||
+                !selectedInternet.Id.Equals(_settings.SelectedInternetAdapterId, StringComparison.OrdinalIgnoreCase);
+            if (adapterSelectionChanged && await GetModernHotspotStateAsync() == TetheringOperationalState.On)
+            {
+                HotspotAdapterStatusText.Text = "Deteniendo el hotspot anterior para aplicar exactamente los adaptadores seleccionados…";
+                var stopped = await StopModernHotspotAsync();
+                if (!stopped.Success)
+                {
+                    HotspotStateText.Text = "Hotspot Detenido";
+                    HotspotDetailText.Text = "No se cambió ningún adaptador: " + stopped.Message;
+                    return;
+                }
+            }
+
+            // The Start button applies the current combo-box selections directly;
+            // users no longer have to press Save first.
+            _settings.SelectedHotspotAdapterId = selectedHotspot.Id;
+            _settings.SelectedInternetAdapterId = selectedInternet.Id;
             _settings.Ssid = ssid;
             _settings.Password = password;
             SaveSettings();
+            HotspotAdapterStatusText.Text = "Adaptador de salida seleccionado: " + selectedHotspot.DisplayName;
+            InternetAdapterStatusText.Text = "Fuente de Internet seleccionada: " + selectedInternet.DisplayName;
             HotspotStateText.Text = "Activando Hotspot…";
-            HotspotDetailText.Text = "Solicitando a Windows que active el Mobile Hotspot moderno…";
+            HotspotDetailText.Text = "Aplicando los adaptadores elegidos; no se cambiarán automáticamente.";
             var result = await StartModernHotspotAsync();
             if (!result.Success)
             {
@@ -1324,17 +1360,19 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
 
             var activeProfile = NetworkInformation.GetInternetConnectionProfile();
             var activeSourceId = activeProfile?.NetworkAdapter.NetworkAdapterId.ToString("D");
-            var migratingLegacySourceSelection = string.IsNullOrWhiteSpace(_settings.SelectedInternetAdapterId);
-            if (migratingLegacySourceSelection ||
-                !rows.Any(row => row.Id.Equals(_settings.SelectedInternetAdapterId, StringComparison.OrdinalIgnoreCase)))
-                _settings.SelectedInternetAdapterId = activeSourceId ?? rows.FirstOrDefault(row => row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))?.Id ?? "";
 
-            // Older builds defaulted the hotspot output adapter to the active Internet adapter.
-            // On dual-Wi-Fi PCs, migrate that automatic choice to a different Wi-Fi adapter.
-            if (string.IsNullOrWhiteSpace(_settings.SelectedHotspotAdapterId) ||
-                !rows.Any(row => row.Id.Equals(_settings.SelectedHotspotAdapterId, StringComparison.OrdinalIgnoreCase)) ||
-                (migratingLegacySourceSelection && rows.Count > 1 &&
-                 _settings.SelectedHotspotAdapterId.Equals(activeSourceId, StringComparison.OrdinalIgnoreCase)))
+            // Only choose defaults on a first run. If a previously selected adapter
+            // disappears, preserve its ID and fail visibly instead of silently switching
+            // the hotspot or Internet source to a different adapter.
+            if (string.IsNullOrWhiteSpace(_settings.SelectedInternetAdapterId))
+            {
+                _settings.SelectedInternetAdapterId =
+                    (activeSourceId is not null && rows.Any(row => row.Id.Equals(activeSourceId, StringComparison.OrdinalIgnoreCase)))
+                        ? activeSourceId
+                        : rows.FirstOrDefault(row => row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))?.Id ?? "";
+            }
+
+            if (string.IsNullOrWhiteSpace(_settings.SelectedHotspotAdapterId))
             {
                 var sourceId = _settings.SelectedInternetAdapterId;
                 var preferred = rows.FirstOrDefault(row => !row.Id.Equals(sourceId, StringComparison.OrdinalIgnoreCase) && row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))
@@ -1504,19 +1542,24 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
             if (password.Length is < 8 or > 63)
                 return (false, "La contraseña Wi-Fi debe tener entre 8 y 63 caracteres.");
 
+            var selectedHotspotAdapter = GetSelectedHotspotWifiAdapter();
+            if (selectedHotspotAdapter is null)
+                return (false, "El adaptador de salida guardado no está disponible. No se usará otro adaptador automáticamente; selecciona el correcto y vuelve a intentarlo.");
+
             var profile = GetSelectedInternetConnectionProfile();
             if (profile is null)
-                return (false, "La Wi-Fi seleccionada como fuente no tiene un perfil de conexión activo. Conecta esa Wi-Fi a Internet o elige la interfaz correcta.");
+                return (false, "El adaptador elegido como fuente de Internet no tiene un perfil activo. No se usará otra conexión automáticamente; conecta ese adaptador o selecciona la fuente correcta.");
+
+            var activeSourceId = profile.NetworkAdapter.NetworkAdapterId.ToString("D");
+            if (!activeSourceId.Equals(_settings.SelectedInternetAdapterId, StringComparison.OrdinalIgnoreCase))
+                return (false, "La conexión detectada no coincide con el adaptador de Internet seleccionado. Se canceló el inicio para evitar usar una conexión distinta.");
 
             // Stop the obsolete Hosted Network (legacy hotspot) before starting the
             // Windows Mobile Hotspot API. Leaving both mechanisms enabled can create
             // an extra virtual Local Area Connection alongside the modern hotspot.
             await DisableLegacyHostedNetworkAsync();
 
-            var selectedAdapter = GetSelectedHotspotWifiAdapter();
-            if (selectedAdapter is null)
-                return (false, "No hay un adaptador Wi-Fi seleccionado disponible. En Configuración Wi-Fi, selecciona un adaptador y pulsa Guardar.");
-            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile, selectedAdapter.NetworkAdapter);
+            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile, selectedHotspotAdapter.NetworkAdapter);
 
             // Windows Mobile Hotspot otherwise keeps its own saved SSID/passphrase
             // (often a DESKTOP-* name and an automatically generated password).
