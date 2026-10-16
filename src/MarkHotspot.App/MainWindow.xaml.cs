@@ -618,11 +618,29 @@ public partial class MainWindow : Window
                     _devicesByMac[mac] = row;
                 }
                 row.Ip = device.Ip;
-                _deviceMissedScans[mac] = 0;
+
+                // ARP may retain stale neighbors after a client disconnects, and some
+                // devices do not answer ICMP. Treat a hosted-network entry or a successful
+                // ping as positive evidence; never flip a connected client to disconnected
+                // on one inconclusive scan.
                 var ping = await PingDeviceAsync(device.Ip);
-                row.State = connectedMacs.Contains(mac) || ping ? "Conectado" : "Desconectado";
+                if (connectedMacs.Contains(mac) || ping)
+                {
+                    row.State = "Conectado";
+                    _deviceMissedScans[mac] = 0;
+                    _deviceUnconfirmedScans[mac] = 0;
+                }
+                else
+                {
+                    _deviceUnconfirmedScans.TryGetValue(mac, out var unconfirmed);
+                    unconfirmed++;
+                    _deviceUnconfirmedScans[mac] = unconfirmed;
+                    // Keep the previous state through transient ping/ARP failures.
+                    // A newly discovered row starts disconnected until positively confirmed.
+                    if (row.State != "Conectado" || unconfirmed >= 4)
+                        row.State = "Desconectado";
+                }
                 _deviceMissedScans[mac] = 0;
-                _deviceUnconfirmedScans[mac] = 0;
                 if (IsBlockedDevice(mac, device.Ip) && _appliedBlockFilters.Add(device.Ip))
                 {
                     try
@@ -644,9 +662,25 @@ public partial class MainWindow : Window
             foreach (var row in _devices)
             {
                 if (found.ContainsKey(row.Mac)) continue;
-                row.State = connectedMacs.Contains(row.Mac) ? "Conectado" : "Desconectado";
-                _deviceMissedScans[row.Mac] = 0;
-                _deviceUnconfirmedScans[row.Mac] = 0;
+
+                if (connectedMacs.Contains(row.Mac))
+                {
+                    row.State = "Conectado";
+                    _deviceMissedScans[row.Mac] = 0;
+                    _deviceUnconfirmedScans[row.Mac] = 0;
+                    continue;
+                }
+
+                // A client can disappear from ARP for a scan while still connected.
+                // Require several consecutive misses before changing its visible state.
+                _deviceMissedScans.TryGetValue(row.Mac, out var missed);
+                missed++;
+                _deviceMissedScans[row.Mac] = missed;
+                if (missed >= 4)
+                {
+                    row.State = "Desconectado";
+                    _deviceUnconfirmedScans[row.Mac] = 0;
+                }
             }
 
             // Keep existing DeviceRow objects in place. Clearing and rebuilding the
