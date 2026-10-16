@@ -1864,7 +1864,7 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
         {
             // schtasks returns an error when the task does not exist; query first so that
             // disabling autostart is still idempotent on a clean installation.
-            if (RunStartupTaskCommand("/Query", "/TN", "MarkHotspot", throwOnFailure: false) == 0)
+            if (RunStartupTaskCommand(new[] { "/Query", "/TN", "MarkHotspot" }, throwOnFailure: false) == 0)
                 RunStartupTaskCommand("/Delete", "/TN", "MarkHotspot", "/F");
         }
     }
