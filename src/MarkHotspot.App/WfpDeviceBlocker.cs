@@ -101,7 +101,7 @@ internal static class WfpDeviceBlocker
                 {
                     FieldKey = addressCondition,
                     MatchType = 0, // FWP_MATCH_EQUAL
-                    ConditionValue = new FwpConditionValue { Type = 19, V4AddressMask = maskPointer } // FWP_V4_ADDR_MASK
+                    ConditionValue = new FwpConditionValue { Type = 17, V4AddressMask = maskPointer } // FWP_V4_ADDR_MASK (FWP_V4_ADDR_MASK enum value is 17; 19 is FWP_RANGE_TYPE)
                 },
                 new FwpmFilterCondition
                 {
