@@ -1479,14 +1479,18 @@ $ipPrefix = '{ipPrefix}'
 try {{
     Import-Module NetQos -ErrorAction Stop
 
-    Remove-NetQosPolicy -Name $upName -Confirm:$false -ErrorAction SilentlyContinue
-    Remove-NetQosPolicy -Name $downName -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-NetQosPolicy -PolicyStore localhost -Name $upName -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-NetQosPolicy -PolicyStore localhost -Name $downName -Confirm:$false -ErrorAction SilentlyContinue
 
-    New-NetQosPolicy -Name $downName -IPDstPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond ([UInt64]{downloadBits}) -ErrorAction Stop | Out-Null
-    New-NetQosPolicy -Name $upName -IPSrcPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond ([UInt64]{uploadBits}) -ErrorAction Stop | Out-Null
+    # Explicitly write to the local policy store, rather than relying on the
+    # cmdlet's default store. QoS policies throttle outbound packets; separate
+    # source/destination matches are required for the two traffic directions.
+    New-NetQosPolicy -PolicyStore localhost -Name $downName -IPDstPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond ([UInt64]{downloadBits}) -ErrorAction Stop | Out-Null
+    New-NetQosPolicy -PolicyStore localhost -Name $upName -IPSrcPrefixMatchCondition $ipPrefix -ThrottleRateActionBitsPerSecond ([UInt64]{uploadBits}) -ErrorAction Stop | Out-Null
 
-    $null = Get-NetQosPolicy -Name $downName -ErrorAction Stop
-    $null = Get-NetQosPolicy -Name $upName -ErrorAction Stop
+    # Verify both rules are not merely stored but visible in the effective policy store.
+    $null = Get-NetQosPolicy -PolicyStore ActiveStore -Name $downName -ErrorAction Stop
+    $null = Get-NetQosPolicy -PolicyStore ActiveStore -Name $upName -ErrorAction Stop
     [Console]::Out.WriteLine('MARKHOTSPOT_OK')
     exit 0
 }}
@@ -1547,8 +1551,8 @@ catch {{
         var upName = "MarkHotspot-UL-" + key;
         var downName = "MarkHotspot-DL-" + key;
         var script = "$ErrorActionPreference = 'Stop'\n$ProgressPreference = 'SilentlyContinue'\nImport-Module NetQos -ErrorAction Stop\n" +
-            "Remove-NetQosPolicy -Name '" + upName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
-            "Remove-NetQosPolicy -Name '" + downName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
+            "Remove-NetQosPolicy -PolicyStore localhost -Name '" + upName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
+            "Remove-NetQosPolicy -PolicyStore localhost -Name '" + downName + "' -Confirm:$false -ErrorAction SilentlyContinue\n"
             "[Console]::Out.WriteLine('MARKHOTSPOT_REMOVED')";
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var psi = new ProcessStartInfo("powershell.exe",
