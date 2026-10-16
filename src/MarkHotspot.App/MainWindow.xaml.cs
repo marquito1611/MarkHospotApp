@@ -1651,11 +1651,17 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
                 connectionsObject = manager.EnumEveryConnection();
                 dynamic connections = connectionsObject;
 
+                // Resolve the exact public and private connections first. ICS keeps its
+                // previous private-interface binding after the Wi-Fi adapter changes;
+                // merely enabling sharing on the new Local Area Connection leaves the
+                // old target configured and can strand clients without Internet.
+                var allConnections = new List<(object Connection, string Name, string DeviceName)>();
                 foreach (var connection in (System.Collections.IEnumerable)connections)
                 {
                     dynamic props = manager.NetConnectionProps(connection);
                     string name = Convert.ToString(props.Name) ?? string.Empty;
                     string deviceName = Convert.ToString(props.DeviceName) ?? string.Empty;
+                    allConnections.Add((connection, name, deviceName));
                     if (NamesMatchAdapter(name, deviceName, sourceNic)) sourceConnection = connection;
                     if (NamesMatchAdapter(name, deviceName, hotspotNic)) targetConnection = connection;
                 }
@@ -1665,12 +1671,41 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
                 if (targetConnection is null)
                     return (false, $"ICS no encontró la interfaz privada del hotspot «{hotspotNic.Name}».");
 
+                // Remove stale ICS roles from old virtual adapters and previous source
+                // adapters before binding this run. Do not leave another connection
+                // marked PUBLIC or PRIVATE after a user changes either selector.
+                foreach (var item in allConnections)
+                {
+                    bool isSource = ReferenceEquals(item.Connection, sourceConnection);
+                    bool isTarget = ReferenceEquals(item.Connection, targetConnection);
+                    if (isSource || isTarget) continue;
+                    object? staleConfigObject = null;
+                    try
+                    {
+                        dynamic staleConfig = manager.INetSharingConfigurationForINetConnection(item.Connection);
+                        staleConfigObject = staleConfig;
+                        if (Convert.ToBoolean(staleConfig.SharingEnabled))
+                            staleConfig.DisableSharing();
+                    }
+                    catch { /* Some disconnected/virtual connections do not expose ICS. */ }
+                    finally
+                    {
+                        if (staleConfigObject is not null && Marshal.IsComObject(staleConfigObject))
+                            try { Marshal.FinalReleaseComObject(staleConfigObject); } catch { }
+                    }
+                }
+
                 dynamic sourceConfig = manager.INetSharingConfigurationForINetConnection(sourceConnection);
                 dynamic targetConfig = manager.INetSharingConfigurationForINetConnection(targetConnection);
                 sourceConfiguration = sourceConfig;
                 targetConfiguration = targetConfig;
-                EnsureSharingType(sourceConfig, 0); // SHARINGCONNECTIONTYPE_PUBLIC
-                EnsureSharingType(targetConfig, 1); // SHARINGCONNECTIONTYPE_PRIVATE
+                // Force a fresh role application even when Windows reports the same
+                // role: it clears stale ICS state left behind by adapter switches.
+                try { if (Convert.ToBoolean(sourceConfig.SharingEnabled)) sourceConfig.DisableSharing(); } catch { }
+                try { if (Convert.ToBoolean(targetConfig.SharingEnabled)) targetConfig.DisableSharing(); } catch { }
+                await Task.Delay(800);
+                sourceConfig.EnableSharing(0); // SHARINGCONNECTIONTYPE_PUBLIC
+                targetConfig.EnableSharing(1); // SHARINGCONNECTIONTYPE_PRIVATE
                 return (true, $"ICS: «{sourceNic.Name}» → «{hotspotNic.Name}».");
             }
             finally
