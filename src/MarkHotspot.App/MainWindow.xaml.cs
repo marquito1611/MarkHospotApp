@@ -1552,7 +1552,7 @@ catch {{
         var downName = "MarkHotspot-DL-" + key;
         var script = "$ErrorActionPreference = 'Stop'\n$ProgressPreference = 'SilentlyContinue'\nImport-Module NetQos -ErrorAction Stop\n" +
             "Remove-NetQosPolicy -PolicyStore localhost -Name '" + upName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
-            "Remove-NetQosPolicy -PolicyStore localhost -Name '" + downName + "' -Confirm:$false -ErrorAction SilentlyContinue\n"
+            "Remove-NetQosPolicy -PolicyStore localhost -Name '" + downName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
             "[Console]::Out.WriteLine('MARKHOTSPOT_REMOVED')";
         var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
         var psi = new ProcessStartInfo("powershell.exe",
