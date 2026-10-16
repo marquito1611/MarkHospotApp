@@ -31,6 +31,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<DeviceRow> _devices = new();
     private readonly ObservableCollection<TrafficLimitRow> _trafficLimits = new();
     private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _appliedBlockFilters = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _macByIp = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, TrafficCounter> _trafficByMac = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _trafficTimer = new() { Interval = TimeSpan.FromSeconds(1) };
@@ -133,6 +134,8 @@ public partial class MainWindow : Window
         _deviceDiscoveryTimer.Start();
         await RefreshHotspotWifiAdaptersAsync();
         await StartModernHotspotOnLaunchAsync();
+        await ScanDevicesAsync();
+        ApplySavedTrafficPolicies();
     }
 
     private void InitializeTrayIcon()
@@ -418,6 +421,7 @@ public partial class MainWindow : Window
             };
             _devicesByMac[mac] = row;
             _devices.Add(row);
+            _trafficByMac.GetOrAdd(mac, _ => new TrafficCounter()).InitializeTotals(cached.TotalUploadBytes, cached.TotalDownloadBytes);
             if (!string.IsNullOrWhiteSpace(row.Ip)) _macByIp[row.Ip] = mac;
         }
         DevicesCountText.Text = _devices.Count.ToString();
@@ -548,6 +552,22 @@ public partial class MainWindow : Window
                 row.Ip = device.Ip;
                 var ping = await PingDeviceAsync(device.Ip);
                 row.State = connectedMacs.Contains(mac) || ping ? "Conectado" : "Desconectado";
+                if (IsBlockedDevice(mac, device.Ip) && _appliedBlockFilters.Add(device.Ip))
+                {
+                    try
+                    {
+                        var blockInterface = FindHotspotInterfaceIndex(device.Ip);
+                        if (blockInterface is not null) WfpDeviceBlocker.Block(device.Ip, blockInterface.Value);
+                        else _appliedBlockFilters.Remove(device.Ip);
+                    }
+                    catch { _appliedBlockFilters.Remove(device.Ip); }
+                }
+                var savedLimit = _settings.TrafficLimits.FirstOrDefault(item => item.Mac.Equals(mac, StringComparison.OrdinalIgnoreCase));
+                if (savedLimit is not null && !savedLimit.Ip.Equals(device.Ip, StringComparison.OrdinalIgnoreCase))
+                {
+                    savedLimit.Ip = device.Ip;
+                    try { ApplyWindowsQosPolicies(savedLimit); SaveSettings(); } catch { }
+                }
             }
 
             foreach (var row in _devices)
@@ -817,6 +837,11 @@ public partial class MainWindow : Window
         private long _totalDownload;
         public long TotalUpload => Interlocked.Read(ref _totalUpload);
         public long TotalDownload => Interlocked.Read(ref _totalDownload);
+        public void InitializeTotals(long upload, long download)
+        {
+            Interlocked.Exchange(ref _totalUpload, Math.Max(0, upload));
+            Interlocked.Exchange(ref _totalDownload, Math.Max(0, download));
+        }
         public void AddUpload(long bytes) { Interlocked.Add(ref _upload, bytes); Interlocked.Add(ref _totalUpload, bytes); }
         public void AddDownload(long bytes) { Interlocked.Add(ref _download, bytes); Interlocked.Add(ref _totalDownload, bytes); }
         public long TakeUpload() => Interlocked.Exchange(ref _upload, 0);
@@ -898,7 +923,7 @@ public partial class MainWindow : Window
             }
             row.Name = device.Name;
             row.Ip = device.Ip;
-            row.State = device.State;
+            row.State = device.DisplayState;
             row.TrafficText = device.TrafficText;
             row.TotalUploadBytes = device.TotalUploadBytes;
             row.TotalDownloadBytes = device.TotalDownloadBytes;
@@ -968,6 +993,20 @@ public partial class MainWindow : Window
         buttons.Children.Add(cancel); buttons.Children.Add(save); root.Children.Add(buttons); dialog.Content = root;
         dialog.Loaded += (_, _) => { nameBox.Focus(); nameBox.SelectAll(); };
         dialog.ShowDialog();
+    }
+
+    private void ApplySavedTrafficPolicies()
+    {
+        foreach (var setting in _settings.TrafficLimits.ToList())
+        {
+            var device = _devices.FirstOrDefault(row => row.Mac.Equals(setting.Mac, StringComparison.OrdinalIgnoreCase));
+            if (device is not null && IPAddress.TryParse(device.Ip, out var ip) && ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                setting.Ip = device.Ip;
+            if (!IPAddress.TryParse(setting.Ip, out var savedIp) || savedIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
+            try { ApplyWindowsQosPolicies(setting); }
+            catch (Exception ex) { SetStatus($"No se pudo reactivar el límite de {setting.Mac}: {Short(ex.Message)}"); }
+        }
+        try { SaveSettings(); } catch { }
     }
 
     private static void ApplyWindowsQosPolicies(TrafficLimitSetting setting)
@@ -1099,8 +1138,12 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
             try
             {
                 foreach (var entry in matchingEntries)
+                {
                     WfpDeviceBlocker.Unblock(entry.Ip);
+                    _appliedBlockFilters.Remove(entry.Ip);
+                }
                 WfpDeviceBlocker.Unblock(selected.Ip);
+                _appliedBlockFilters.Remove(selected.Ip);
                 _settings.BlockedDevices.RemoveAll(b =>
                     b.Ip.Equals(selected.Ip, StringComparison.OrdinalIgnoreCase) ||
                     (!string.IsNullOrWhiteSpace(selected.Mac) && b.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase)));
