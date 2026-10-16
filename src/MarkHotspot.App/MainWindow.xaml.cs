@@ -246,6 +246,7 @@ public partial class MainWindow : Window
         SettingsPage.Visibility = Visibility.Collapsed;
         AboutPage.Visibility = Visibility.Collapsed;
         page.Visibility = Visibility.Visible;
+        AnimatePageContent(page);
 
         var active = page == HomePage ? HomeNavButton
             : page == DevicesPage ? DevicesNavButton
@@ -268,6 +269,53 @@ public partial class MainWindow : Window
         active.Background = selectedBackground;
         active.Foreground = activeForeground;
         active.FontWeight = System.Windows.FontWeights.SemiBold;
+    }
+
+    private static void AnimatePageContent(System.Windows.Controls.StackPanel page)
+    {
+        // Staggered reveal: each main block enters with a short upward movement and fade.
+        // Only direct children are animated, keeping the effect smooth on slower PCs.
+        const double staggerMilliseconds = 48;
+        const double durationMilliseconds = 260;
+        var index = 0;
+
+        foreach (var element in page.Children.OfType<FrameworkElement>())
+        {
+            if (element.Visibility != Visibility.Visible) continue;
+
+            element.BeginAnimation(UIElement.OpacityProperty, null);
+
+            var translate = new System.Windows.Media.TranslateTransform(0, 14);
+            var group = new System.Windows.Media.TransformGroup();
+            if (element.RenderTransform != System.Windows.Media.Transform.Identity)
+                group.Children.Add(element.RenderTransform);
+            group.Children.Add(translate);
+            element.RenderTransform = group;
+            element.Opacity = 0;
+
+            var easing = new System.Windows.Media.Animation.CubicEase
+            {
+                EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut
+            };
+            var delay = TimeSpan.FromMilliseconds(index * staggerMilliseconds);
+            var duration = TimeSpan.FromMilliseconds(durationMilliseconds);
+
+            element.BeginAnimation(UIElement.OpacityProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(0, 1, duration)
+                {
+                    BeginTime = delay,
+                    EasingFunction = easing
+                });
+
+            translate.BeginAnimation(System.Windows.Media.TranslateTransform.YProperty,
+                new System.Windows.Media.Animation.DoubleAnimation(14, 0, duration)
+                {
+                    BeginTime = delay,
+                    EasingFunction = easing
+                });
+
+            index++;
+        }
     }
 
     private void HomeNav_Click(object sender, RoutedEventArgs e) => ShowPage(HomePage);
