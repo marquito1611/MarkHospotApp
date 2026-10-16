@@ -56,6 +56,7 @@ public partial class MainWindow : Window
     private bool _updatingCredentials;
     private bool _networkRestartInProgress;
     private bool _changingStartupToggle;
+    private bool _loadingHotspotMethod;
     private DateTime _lastDeviceCacheSaveUtc = DateTime.MinValue;
     private readonly bool _startMinimized;
 
@@ -83,6 +84,10 @@ public partial class MainWindow : Window
         _trafficTimer.Tick += (_, _) => UpdateTrafficRates();
         _trafficTimer.Start();
         LoadSettings();
+        _loadingHotspotMethod = true;
+        _settings.HotspotMethod = NormalizeHotspotMethod(_settings.HotspotMethod);
+        HotspotMethodCombo.SelectedValue = _settings.HotspotMethod;
+        _loadingHotspotMethod = false;
         CurrentSettings = _settings;
         RestoreDeviceCache();
         AutoStartToggle.IsChecked = _settings.StartWithWindows;
@@ -90,7 +95,7 @@ public partial class MainWindow : Window
         catch (Exception ex) { SetStatus("No se pudo aplicar el inicio automático: " + ex.Message); }
         InstalledVersionText.Text = "Versión instalada: " + GetInstalledVersionLabel();
         Loaded += MainWindow_Loaded;
-        _hotspotStateTimer.Tick += async (_, _) => await RefreshModernHotspotStateAsync();
+        _hotspotStateTimer.Tick += async (_, _) => await RefreshHotspotStateAsync();
         _hotspotStateTimer.Start();
         _deviceDiscoveryTimer.Tick += async (_, _) => await ScanDevicesAsync();
         LoadTrafficLimitSettings();
@@ -207,7 +212,7 @@ public partial class MainWindow : Window
         _exitInProgress = true;
         try
         {
-            var result = await StopModernHotspotAsync();
+            var result = await StopHotspotAsync();
             if (!result.Success)
             {
                 var answer = System.Windows.MessageBox.Show(
@@ -456,6 +461,7 @@ public partial class MainWindow : Window
             }
             _settings.BlockedDevices ??= new();
             _settings.TrafficLimits ??= new();
+            _settings.HotspotMethod = NormalizeHotspotMethod(_settings.HotspotMethod);
         }
         catch (Exception ex) { SetStatus("No se pudo leer la configuración: " + ex.Message); }
     }
@@ -540,10 +546,10 @@ public partial class MainWindow : Window
             SaveSettings();
             UpdateCredentialsSaveButton();
             CredentialsStatusText.Text = "Configuración guardada.";
-            if (await GetModernHotspotStateAsync() == TetheringOperationalState.On)
+            if (await GetHotspotStateAsync() == TetheringOperationalState.On)
             {
                 CredentialsStatusText.Text = "Aplicando el nombre y la contraseña nuevos al hotspot…";
-                var stopped = await StopModernHotspotAsync();
+                var stopped = await StopHotspotAsync();
                 if (!stopped.Success)
                 {
                     CredentialsStatusText.Text = "Se guardaron los cambios, pero Windows no pudo detener el hotspot. Pulsa Reinicia la red.";
@@ -551,7 +557,7 @@ public partial class MainWindow : Window
                     HotspotDetailText.Text = stopped.Message;
                     return;
                 }
-                var started = await StartModernHotspotAsync();
+                var started = await StartHotspotAsync();
                 HotspotDetailText.Text = started.Message;
                 if (started.Success)
                 {
@@ -582,7 +588,7 @@ public partial class MainWindow : Window
             HotspotStateText.Text = "Reiniciando red…";
             HotspotDetailText.Text = "Deteniendo el hotspot y reiniciando los adaptadores y servicios de red de Windows. La conexión puede interrumpirse durante unos segundos.";
             RestartNetworkHintButton.Visibility = Visibility.Collapsed;
-            try { await StopModernHotspotAsync(); } catch { }
+            try { await StopHotspotAsync(); } catch { }
 
             const string script = @"
 $ErrorActionPreference = 'Stop'
@@ -759,10 +765,10 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
             var adapterSelectionChanged =
                 !selectedHotspot.Id.Equals(_settings.SelectedHotspotAdapterId, StringComparison.OrdinalIgnoreCase) ||
                 !selectedInternet.Id.Equals(_settings.SelectedInternetAdapterId, StringComparison.OrdinalIgnoreCase);
-            if (adapterSelectionChanged && await GetModernHotspotStateAsync() == TetheringOperationalState.On)
+            if (adapterSelectionChanged && await GetHotspotStateAsync() == TetheringOperationalState.On)
             {
                 HotspotAdapterStatusText.Text = "Deteniendo el hotspot anterior para aplicar exactamente los adaptadores seleccionados…";
-                var stopped = await StopModernHotspotAsync();
+                var stopped = await StopHotspotAsync();
                 if (!stopped.Success)
                 {
                     HotspotStateText.Text = "Hotspot Detenido";
@@ -782,7 +788,7 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
             InternetAdapterStatusText.Text = "Fuente de Internet seleccionada: " + selectedInternet.DisplayName;
             HotspotStateText.Text = "Activando Hotspot…";
             HotspotDetailText.Text = "Aplicando los adaptadores elegidos; no se cambiarán automáticamente.";
-            var result = await StartModernHotspotAsync();
+            var result = await StartHotspotAsync();
             if (!result.Success)
             {
                 HotspotStateText.Text = "Hotspot Detenido";
@@ -805,7 +811,7 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
         try
         {
             HotspotStateText.Text = "Hotspot Deteniendo…";
-            var result = await StopModernHotspotAsync();
+            var result = await StopHotspotAsync();
             HotspotStateText.Text = "Hotspot Detenido";
             HotspotDetailText.Text = result.Message;
             RestartNetworkHintButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
@@ -1980,11 +1986,11 @@ catch {{
                 return;
             }
 
-            var state = await GetModernHotspotStateAsync();
+            var state = await GetHotspotStateAsync();
             if (state == TetheringOperationalState.On)
             {
                 HotspotAdapterStatusText.Text = "Deteniendo el hotspot para cambiar el adaptador…";
-                var stopped = await StopModernHotspotAsync();
+                var stopped = await StopHotspotAsync();
                 if (!stopped.Success)
                 {
                     HotspotAdapterStatusText.Text = "No se cambió el adaptador: " + stopped.Message;
@@ -2001,7 +2007,7 @@ catch {{
 
             if (state == TetheringOperationalState.On)
             {
-                var started = await StartModernHotspotAsync();
+                var started = await StartHotspotAsync();
                 HotspotStateText.Text = started.Success ? "Hotspot Activo" : "Hotspot Detenido";
                 HotspotDetailText.Text = started.Message;
                 HotspotAdapterStatusText.Text = started.Success
@@ -2018,11 +2024,202 @@ catch {{
         finally { SaveHotspotAdapterButton.IsEnabled = true; }
     }
 
+    private static string NormalizeHotspotMethod(string? method) =>
+        method is "HostedNetwork" or "HostedNetworkIcs" or "MobileHotspot" ? method : "MobileHotspot";
+
+    private void HotspotMethodCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_loadingHotspotMethod || !IsLoaded || HotspotMethodCombo.SelectedValue is not string method) return;
+        _settings.HotspotMethod = NormalizeHotspotMethod(method);
+        try
+        {
+            SaveSettings();
+            HotspotMethodStatusText.Text = _settings.HotspotMethod switch
+            {
+                "HostedNetwork" => "Método clásico seleccionado. Solo funcionará si el controlador Wi-Fi admite Hosted Network; esta opción no activa ICS automáticamente.",
+                "HostedNetworkIcs" => "Se creará la red clásica y después se configurará ICS para compartir Internet.",
+                _ => "Se usará la API Mobile Hotspot de Windows."
+            };
+            SetStatus("Método de hotspot guardado. Detén y vuelve a iniciar el hotspot para aplicar el cambio.");
+        }
+        catch (Exception ex)
+        {
+            HotspotMethodStatusText.Text = "No se pudo guardar el método: " + ex.Message;
+        }
+    }
+
+    private async Task<(bool Success, string Message)> StartHotspotAsync() =>
+        NormalizeHotspotMethod(_settings.HotspotMethod) switch
+        {
+            "HostedNetwork" => await StartHostedNetworkAsync(false),
+            "HostedNetworkIcs" => await StartHostedNetworkAsync(true),
+            _ => await StartModernHotspotAsync()
+        };
+
+    private async Task<(bool Success, string Message)> StopHotspotAsync() =>
+        NormalizeHotspotMethod(_settings.HotspotMethod) switch
+        {
+            "HostedNetwork" or "HostedNetworkIcs" => await StopHostedNetworkAsync(),
+            _ => await StopModernHotspotAsync()
+        };
+
+    private async Task<TetheringOperationalState?> GetHotspotStateAsync()
+    {
+        if (NormalizeHotspotMethod(_settings.HotspotMethod) == "MobileHotspot")
+            return await GetModernHotspotStateAsync();
+        try
+        {
+            var result = await RunNetshAsync("wlan show hostednetwork");
+            if (result.ExitCode != 0) return null;
+            return Regex.IsMatch(result.Output, @"(?im)^\s*(?:Status|Estado)\s*:\s*(?:Started|Iniciado)\b")
+                ? TetheringOperationalState.On : TetheringOperationalState.Off;
+        }
+        catch { return null; }
+    }
+
+    private async Task RefreshHotspotStateAsync()
+    {
+        if (_hotspotOperationInProgress) return;
+        var state = await GetHotspotStateAsync();
+        if (state == TetheringOperationalState.On)
+        {
+            HotspotStateText.Text = "Hotspot Activo";
+            HotspotDetailText.Text = "Windows confirma que el método seleccionado está activo.";
+        }
+        else if (state == TetheringOperationalState.Off)
+        {
+            HotspotStateText.Text = "Hotspot Detenido";
+            HotspotDetailText.Text = "Windows confirma que el método seleccionado está detenido.";
+        }
+    }
+
+    private async Task<(bool Success, string Message)> StartHostedNetworkAsync(bool shareInternet)
+    {
+        if (_hotspotOperationInProgress) return (false, "Ya hay una operación del hotspot en curso.");
+        _hotspotOperationInProgress = true;
+        try
+        {
+            var ssid = _settings.Ssid?.Trim() ?? string.Empty;
+            var password = _settings.Password ?? string.Empty;
+            if (ssid.Length is < 1 or > 32 || ssid.Contains('"'))
+                return (false, "El nombre Wi-Fi debe tener entre 1 y 32 caracteres y no contener comillas dobles.");
+            if (password.Length is < 8 or > 63 || password.Contains('"'))
+                return (false, "La contraseña Wi-Fi debe tener entre 8 y 63 caracteres y no contener comillas dobles.");
+            if (GetSelectedHotspotWifiAdapter() is null)
+                return (false, "El adaptador Wi-Fi de salida seleccionado no está disponible.");
+            var profile = GetSelectedInternetConnectionProfile();
+            if (shareInternet && profile is null)
+                return (false, "ICS necesita una conexión de origen activa. Selecciona el adaptador con Internet y vuelve a intentarlo.");
+            if (shareInternet && profile is not null &&
+                !profile.NetworkAdapter.NetworkAdapterId.ToString("D").Equals(_settings.SelectedInternetAdapterId, StringComparison.OrdinalIgnoreCase))
+                return (false, "La conexión activa no coincide con el adaptador de Internet seleccionado.");
+
+            // Hosted Network is a legacy driver feature. netsh cannot select a physical radio.
+            await RunNetshAsync("wlan stop hostednetwork");
+            var configured = await RunNetshAsync($"wlan set hostednetwork mode=allow ssid=\"{ssid}\" key=\"{password}\" keyUsage=persistent");
+            if (configured.ExitCode != 0)
+                return (false, "Windows no pudo configurar Hosted Network: " + Short(configured.Output));
+            var started = await RunNetshAsync("wlan start hostednetwork");
+            if (started.ExitCode != 0 || Regex.IsMatch(started.Output, @"(?i)(not supported|no se admite|no es compatible|could not be started|no se pudo iniciar)"))
+                return (false, "El controlador no pudo iniciar Hosted Network. Comprueba «netsh wlan show drivers»: " + Short(started.Output));
+
+            var active = false;
+            var until = DateTime.UtcNow.AddSeconds(15);
+            while (DateTime.UtcNow < until)
+            {
+                var state = await RunNetshAsync("wlan show hostednetwork");
+                if (Regex.IsMatch(state.Output, @"(?im)^\s*(?:Status|Estado)\s*:\s*(?:Started|Iniciado)\b"))
+                { active = true; break; }
+                await Task.Delay(500);
+            }
+            if (!active)
+            {
+                await RunNetshAsync("wlan stop hostednetwork");
+                return (false, "netsh aceptó la orden, pero Windows no confirmó que Hosted Network estuviera activo.");
+            }
+
+            if (shareInternet)
+            {
+                var sharing = await ConfigureInternetConnectionSharingAsync(profile!.NetworkAdapter.NetworkAdapterId);
+                if (!sharing.Success)
+                {
+                    await RunNetshAsync("wlan stop hostednetwork");
+                    return (false, "La red Wi-Fi se creó, pero no se pudo activar ICS: " + sharing.Message);
+                }
+            }
+            return (true, shareInternet
+                ? $"Hosted Network activo con «{ssid}» e ICS configurado para compartir Internet. netsh no permite seleccionar explícitamente la radio física."
+                : $"Hosted Network activo con «{ssid}». El método clásico no activa ICS; los clientes podrían no tener Internet.");
+        }
+        catch (Exception ex) { return (false, "No se pudo crear Hosted Network: " + ex.Message); }
+        finally { _hotspotOperationInProgress = false; }
+    }
+
+    private async Task<(bool Success, string Message)> StopHostedNetworkAsync()
+    {
+        if (_hotspotOperationInProgress) return (false, "Ya hay una operación del hotspot en curso.");
+        _hotspotOperationInProgress = true;
+        try
+        {
+            var sharing = await DisableAllInternetSharingAsync();
+            var stopped = await RunNetshAsync("wlan stop hostednetwork");
+            var disallowed = await RunNetshAsync("wlan set hostednetwork mode=disallow");
+            if (stopped.ExitCode != 0 && !Regex.IsMatch(stopped.Output, @"(?i)(not started|no está iniciado|no se ha iniciado)"))
+                return (false, "No se pudo detener Hosted Network: " + Short(stopped.Output));
+            if (!sharing.Success)
+                return (false, "Hosted Network se detuvo, pero no se pudo limpiar ICS: " + sharing.Message);
+            if (disallowed.ExitCode != 0)
+                return (false, "La red se detuvo, pero Windows no pudo deshabilitar Hosted Network: " + Short(disallowed.Output));
+            return (true, "Hosted Network detenido e ICS desactivado.");
+        }
+        catch (Exception ex) { return (false, "Error al detener Hosted Network: " + ex.Message); }
+        finally { _hotspotOperationInProgress = false; }
+    }
+
+    private Task<(bool Success, string Message)> DisableAllInternetSharingAsync()
+    {
+        object? managerObject = null;
+        object? connectionsObject = null;
+        try
+        {
+            var managerType = Type.GetTypeFromProgID("HNetCfg.HNetShare");
+            if (managerType is null) return Task.FromResult((false, "Windows no expone la API COM HNetCfg."));
+            managerObject = Activator.CreateInstance(managerType);
+            if (managerObject is null) return Task.FromResult((false, "No se pudo crear el administrador ICS."));
+            dynamic manager = managerObject;
+            connectionsObject = manager.EnumEveryConnection();
+            foreach (var connection in (System.Collections.IEnumerable)connectionsObject)
+            {
+                object? configObject = null;
+                try
+                {
+                    dynamic config = manager.INetSharingConfigurationForINetConnection(connection);
+                    configObject = config;
+                    if (Convert.ToBoolean(config.SharingEnabled)) config.DisableSharing();
+                }
+                catch { /* Some adapters do not expose ICS configuration. */ }
+                finally
+                {
+                    if (configObject is not null && Marshal.IsComObject(configObject))
+                        try { Marshal.FinalReleaseComObject(configObject); } catch { }
+                }
+            }
+            return Task.FromResult((true, "ICS desactivado."));
+        }
+        catch (Exception ex) { return Task.FromResult((false, "No se pudo desactivar ICS: " + ex.Message)); }
+        finally
+        {
+            foreach (var comObject in new[] { connectionsObject, managerObject })
+                if (comObject is not null && Marshal.IsComObject(comObject))
+                    try { Marshal.FinalReleaseComObject(comObject); } catch { }
+        }
+    }
+
     private async Task StartModernHotspotOnLaunchAsync()
     {
         HotspotStateText.Text = "Activando Hotspot…";
-        HotspotDetailText.Text = "Aplicando el nombre y la contraseña guardados en MarkHotspot…";
-        var result = await StartModernHotspotAsync();
+        HotspotDetailText.Text = "Aplicando el nombre, la contraseña y el método guardados en MarkHotspot…";
+        var result = await StartHotspotAsync();
         HotspotDetailText.Text = result.Message;
         if (result.Success)
         {
@@ -2348,7 +2545,7 @@ catch {{
     private async Task RefreshModernHotspotStateAsync()
     {
         if (_hotspotOperationInProgress) return;
-        var state = await GetModernHotspotStateAsync();
+        var state = await GetHotspotStateAsync();
         if (state == TetheringOperationalState.On)
         {
             HotspotStateText.Text = "Hotspot Activo";
@@ -2508,6 +2705,7 @@ catch {{
 
     private sealed class AppSettings
     {
+        public string HotspotMethod { get; set; } = "MobileHotspot";
         public bool IsDarkTheme { get; set; } = true;
         public bool StartWithWindows { get; set; } = true;
         public string Ssid { get; set; } = "MarkHotspot";
