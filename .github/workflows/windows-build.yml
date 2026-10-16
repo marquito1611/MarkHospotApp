@@ -139,6 +139,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
-          $notes = "Nuevas mejoras y corrección de errores."
+          $notes = "Nuevas mejoras en estabilidad y corrección de errores"
           Set-Content -Path release-notes.md -Value $notes -Encoding utf8
           gh release create $tag "artifacts/MarkHotspot/MarkHotspot.exe" "artifacts/MarkHotspot/MarkSoft-Code-Signing.cer" --title $tag --notes-file release-notes.md
