@@ -72,7 +72,7 @@ internal static class WfpDeviceBlocker
                 {
                     FieldKey = RemoteAddressCondition,
                     MatchType = 0,
-                    ConditionValue = new FwpConditionValue { Type = 13, V4AddressMask = maskPointer }
+                    ConditionValue = new FwpConditionValue { Type = 19, V4AddressMask = maskPointer }
                 },
                 new FwpmFilterCondition
                 {
