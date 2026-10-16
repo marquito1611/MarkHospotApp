@@ -2000,8 +2000,8 @@ Get-NetQosPolicy -Name $upName,$downName -PolicyStore PersistentStore -ErrorActi
         public string Name { get => _name; set { _name = value; OnPropertyChanged(); OnPropertyChanged(nameof(DeviceIcon)); } }
         public string DeviceIcon => DetectDeviceIcon(Name);
         public string State { get => _state; set { _state = value; OnPropertyChanged(); OnPropertyChanged(nameof(DisplayState)); } }
-        // The status column reports only the real connection state. Blocking is represented by the button label and persisted rule, not by connection status.
-        public string DisplayState => State;
+        // A saved block rule takes precedence over connection status, even while the client remains connected.
+        public string DisplayState => MainWindow.IsBlockedDevice(Mac, Ip) ? "Bloqueado" : State;
         public void RefreshBlockedState() => OnPropertyChanged(nameof(DisplayState));
         public string TrafficText { get => _trafficText; set { _trafficText = value; OnPropertyChanged(); } }
         private long _totalUploadBytes;
