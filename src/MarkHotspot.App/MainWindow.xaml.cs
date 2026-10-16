@@ -1448,8 +1448,10 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
 
         var upName = "MarkHotspot-UL-" + key;
         var downName = "MarkHotspot-DL-" + key;
-        var uploadBits = Math.Max(1L, setting.UploadKBps) * 1024L * 8L;
-        var downloadBits = Math.Max(1L, setting.DownloadKBps) * 1024L * 8L;
+        // Windows QoS can permit short packet bursts. Apply a 10% headroom so
+        // measured traffic is less likely to overshoot the user's configured ceiling.
+        var uploadBits = Math.Max(1L, (long)Math.Floor(setting.UploadKBps * 0.90d)) * 1024L * 8L;
+        var downloadBits = Math.Max(1L, (long)Math.Floor(setting.DownloadKBps * 0.90d)) * 1024L * 8L;
         var ipPrefix = ip + "/32";
 
         // NetQos does not use the firewall-style "PersistentStore" value. Omitting
@@ -1577,14 +1579,25 @@ catch {{
         };
         var root = new System.Windows.Controls.StackPanel { Margin = new Thickness(22) };
         root.Children.Add(new System.Windows.Controls.TextBlock { Text = selected.Name, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,12) });
-        var enabledToggle = new System.Windows.Controls.CheckBox
+        var toggleRow = new System.Windows.Controls.Grid { Margin = new Thickness(0,0,0,14) };
+        toggleRow.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        toggleRow.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = GridLength.Auto });
+        var toggleLabel = new System.Windows.Controls.TextBlock
         {
-            Content = "Activar límite de tráfico",
-            IsChecked = saved?.Enabled ?? true,
-            Margin = new Thickness(0,0,0,14),
-            FontSize = 14
+            Text = "Activar límite de tráfico",
+            FontSize = 14,
+            VerticalAlignment = VerticalAlignment.Center
         };
-        root.Children.Add(enabledToggle);
+        var enabledToggle = new System.Windows.Controls.Primitives.ToggleButton
+        {
+            IsChecked = saved?.Enabled ?? true,
+            Style = (Style)Application.Current.Resources["ThemeSwitchStyle"],
+            VerticalAlignment = VerticalAlignment.Center
+        };
+        System.Windows.Controls.Grid.SetColumn(enabledToggle, 1);
+        toggleRow.Children.Add(toggleLabel);
+        toggleRow.Children.Add(enabledToggle);
+        root.Children.Add(toggleRow);
         root.Children.Add(new System.Windows.Controls.TextBlock { Text = "↑  Velocidad máxima de subida (KB/s)", Margin = new Thickness(0,0,0,5) });
         var uploadBox = new System.Windows.Controls.TextBox { Text = (saved?.UploadKBps ?? Math.Max(1, (saved?.UploadMbps ?? 3) * 125)).ToString(), Padding = new Thickness(9), Margin = new Thickness(0,0,0,14) };
         root.Children.Add(uploadBox);
