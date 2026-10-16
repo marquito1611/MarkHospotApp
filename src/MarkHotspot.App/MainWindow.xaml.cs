@@ -618,6 +618,7 @@ public partial class MainWindow : Window
                     _devicesByMac[mac] = row;
                 }
                 row.Ip = device.Ip;
+                _deviceMissedScans[mac] = 0;
                 var ping = await PingDeviceAsync(device.Ip);
                 if (connectedMacs.Contains(mac) || ping)
                 {
