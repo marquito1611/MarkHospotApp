@@ -678,12 +678,16 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
         BlockDeviceButton.IsEnabled = false;
         try
         {
-            SetStatus(action == "bloquear" ? "Aplicando el bloqueo de red…" : "Quitando el bloqueo de red…");
+            var progress = action == "bloquear" ? "Aplicando el bloqueo de red…" : "Quitando el bloqueo de red…";
+            SetStatus(progress);
+            SetDeviceActionStatus(progress);
             await ToggleDeviceBlockAsync();
         }
         catch (Exception ex)
         {
-            SetStatus($"No se pudo {action} el dispositivo: " + ex.Message);
+            var errorMessage = $"No se pudo {action} el dispositivo: " + ex.Message;
+            SetStatus(errorMessage);
+            SetDeviceActionStatus(errorMessage, isError: true);
             System.Windows.MessageBox.Show(this, $"No se pudo {action} el dispositivo:\n" + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
@@ -1663,7 +1667,22 @@ catch {{
         RenameDeviceButton.IsEnabled = selected is not null;
         RemoveDeviceButton.IsEnabled = selected is not null;
         LimitDeviceTrafficButton.IsEnabled = selected is not null;
-        BlockDeviceButton.Content = selected is not null && IsBlockedDevice(selected.Mac, selected.Ip) ? "Desbloquear dispositivo" : "Bloquear dispositivo";
+
+        var blocked = selected is not null && IsBlockedDevice(selected.Mac, selected.Ip);
+        // Keep the XAML content intact so the icon is never discarded.
+        if (BlockDeviceButtonLabel is not null)
+            BlockDeviceButtonLabel.Text = blocked ? "Desbloquear dispositivo" : "Bloquear dispositivo";
+        if (BlockDeviceIconText is not null)
+            BlockDeviceIconText.Text = blocked ? "🔓" : "🔒";
+    }
+
+    private void SetDeviceActionStatus(string message, bool isError = false)
+    {
+        if (DeviceActionStatusText is null) return;
+        DeviceActionStatusText.Text = message;
+        DeviceActionStatusText.Foreground = isError
+            ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(220, 38, 38))
+            : (System.Windows.Media.Brush)Application.Current.Resources["MutedBrush"];
     }
 
     private async Task ToggleDeviceBlockAsync()
@@ -1705,11 +1724,13 @@ catch {{
                 await RunNetshAsync($"advfirewall firewall delete rule name=\"{safeName}-Out\"");
                 foreach (var row in _devices) row.RefreshBlockedState();
                 UpdateBlockButton();
-                SetStatus($"Filtro de red eliminado. {selected.Ip} ya no aparece como bloqueado.");
+                var successMessage = $"Bloqueo retirado. {selected.Name} ({selected.Ip}) vuelve a tener acceso a la red.";
+            SetStatus(successMessage);
+            SetDeviceActionStatus(successMessage);
             }
             catch (Exception ex)
             {
-                SetStatus("No se pudo quitar el bloqueo de red: " + ex.Message);
+                throw new InvalidOperationException("No se pudo quitar el bloqueo de red: " + ex.Message, ex);
             }
             return;
         }
@@ -1743,11 +1764,14 @@ catch {{
             _appliedBlockFilters.Add(selected.Ip);
             foreach (var row in _devices) row.RefreshBlockedState();
             UpdateBlockButton();
-            SetStatus($"Bloqueo de red aplicado a {selected.Name} ({selected.Ip}) mediante Windows Filtering Platform.");
+            var successMessage = $"Bloqueo aplicado correctamente a {selected.Name} ({selected.Ip}).";
+            SetStatus(successMessage);
+            SetDeviceActionStatus(successMessage);
         }
         catch (Exception ex)
         {
-            SetStatus("No se pudo aplicar el filtro de bloqueo. El dispositivo no se marcará como bloqueado: " + ex.Message);
+            throw new InvalidOperationException(
+                "No se pudo aplicar el filtro de bloqueo. El dispositivo no se marcará como bloqueado: " + ex.Message, ex);
         }
     }
 
