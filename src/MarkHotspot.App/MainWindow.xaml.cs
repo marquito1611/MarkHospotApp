@@ -585,31 +585,20 @@ public partial class MainWindow : Window
             try { await StopModernHotspotAsync(); } catch { }
 
             const string script = @"
-$ErrorActionPreference = 'Continue'
+$ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
-$adapters = @(Get-NetAdapter | Where-Object { $_.Name -notmatch 'Loopback' -and $_.Status -ne 'Disabled' })
-$adapterNames = @($adapters | ForEach-Object { $_.Name })
 $errors = New-Object System.Collections.Generic.List[string]
-foreach ($adapter in $adapters) {
-    try { Disable-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop | Out-Null }
-    catch { $errors.Add(('Deshabilitar ' + $adapter.Name + ': ' + $_.Exception.Message)) }
-}
-Start-Sleep -Seconds 3
-foreach ($name in $adapterNames) {
-    try { Enable-NetAdapter -Name $name -Confirm:$false -ErrorAction Stop | Out-Null }
-    catch { $errors.Add(('Habilitar ' + $name + ': ' + $_.Exception.Message)) }
-}
-Start-Sleep -Seconds 2
-foreach ($service in @('WlanSvc','SharedAccess','icssvc')) {
+# Never disable network adapters here. Windows Mobile Hotspot uses a Wi-Fi Direct
+# virtual adapter, and toggling all NICs can leave its driver/selection invalid.
+foreach ($service in @('SharedAccess','icssvc')) {
     try {
         $svc = Get-Service -Name $service -ErrorAction Stop
         if ($svc.Status -eq 'Running') { Restart-Service -Name $service -Force -ErrorAction Stop }
         else { Start-Service -Name $service -ErrorAction Stop }
     } catch { $errors.Add(('Servicio ' + $service + ': ' + $_.Exception.Message)) }
 }
-if ($adapterNames.Count -eq 0) { $errors.Add('Windows no encontró adaptadores de red habilitados para reiniciar.') }
 if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($errors -join ' | ')); exit 1 }
-[Console]::Out.WriteLine('MARKHOTSPOT_OK: Reiniciados ' + $adapterNames.Count + ' adaptadores y los servicios de red.')
+[Console]::Out.WriteLine('MARKHOTSPOT_OK: Servicios de conexión compartida reiniciados sin deshabilitar los adaptadores.')
 ";
             var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
             var psi = new ProcessStartInfo("powershell.exe", "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
@@ -640,12 +629,24 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
                 RestartNetworkHintButton.Visibility = Visibility.Visible;
                 return;
             }
-            await Task.Delay(3000);
+            await Task.Delay(2500);
             await RefreshAdaptersAsync();
             await RefreshHotspotWifiAdaptersAsync();
+            // Re-query Windows' Wi-Fi adapter objects after restarting ICS; stale
+            // WinRT NetworkAdapter references can otherwise cause "invalid driver".
+            await Task.Delay(1500);
+            await RefreshHotspotWifiAdaptersAsync();
+            if (HotspotAdapterCombo.SelectedItem is not HotspotWifiAdapterRow ||
+                InternetAdapterCombo.SelectedItem is not HotspotWifiAdapterRow)
+            {
+                HotspotStateText.Text = "Red reiniciada; falta un adaptador válido";
+                HotspotDetailText.Text = "La red se reinició sin deshabilitar los controladores. Windows aún no expone uno de los adaptadores seleccionados. Espera unos segundos y actualiza la lista; no se seleccionará otro adaptador automáticamente.";
+                RestartNetworkHintButton.Visibility = Visibility.Visible;
+                return;
+            }
             HotspotStateText.Text = "Red reiniciada";
             HotspotDetailText.Text = stdout;
-            CredentialsStatusText.Text = "Red reiniciada. Si el hotspot no se activa solo, pulsa Activar Mobile Hotspot.";
+            CredentialsStatusText.Text = "Red reiniciada sin deshabilitar los adaptadores. Pulsa Activar Mobile Hotspot si no se inicia automáticamente.";
         }
         catch (Exception ex)
         {
@@ -905,7 +906,13 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
                 if (savedLimit is not null && !savedLimit.Ip.Equals(device.Ip, StringComparison.OrdinalIgnoreCase))
                 {
                     savedLimit.Ip = device.Ip;
-                    try { ApplyWindowsQosPolicies(savedLimit); SaveSettings(); } catch { }
+                    try
+                    {
+                        if (savedLimit.Enabled) ApplyWindowsQosPolicies(savedLimit);
+                        else RemoveWindowsQosPolicies(savedLimit.Mac);
+                        SaveSettings();
+                    }
+                    catch { }
                 }
             }
 
@@ -1412,6 +1419,12 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
             var device = _devices.FirstOrDefault(row => row.Mac.Equals(setting.Mac, StringComparison.OrdinalIgnoreCase));
             if (device is not null && IPAddress.TryParse(device.Ip, out var ip) && ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
                 setting.Ip = device.Ip;
+            if (!setting.Enabled)
+            {
+                try { RemoveWindowsQosPolicies(setting.Mac); }
+                catch (Exception ex) { SetStatus($"No se pudo desactivar el límite de {setting.Mac}: {Short(ex.Message)}"); }
+                continue;
+            }
             if (!IPAddress.TryParse(setting.Ip, out var savedIp) || savedIp.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork) continue;
             try { ApplyWindowsQosPolicies(setting); }
             catch (Exception ex) { SetStatus($"No se pudo reactivar el límite de {setting.Mac}: {Short(ex.Message)}"); }
@@ -2486,6 +2499,7 @@ catch {{
         public int UploadMbps { get; set; } = 3;
         public int DownloadKBps { get; set; } = 1250;
         public int UploadKBps { get; set; } = 375;
+        public bool Enabled { get; set; } = true;
         public string UpdatedAt { get; set; } = "";
     }
     private sealed class BlockedDevice
