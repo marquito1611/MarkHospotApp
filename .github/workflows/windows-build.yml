@@ -91,24 +91,9 @@ jobs:
           MARKSOFT_SIGNING_CERT_PASSWORD: ${{ secrets.MARKSOFT_SIGNING_CERT_PASSWORD }}
         run: |
           $exe = (Resolve-Path "artifacts/MarkHotspot/MarkHotspot.exe").Path
-          $signTool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\signtool\.exe
-        with:
-          name: MarkHotspot-win-x64
-          path: artifacts/MarkHotspot/
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Publish GitHub Release with changelog
-        if: steps.guard.outputs.current == 'true'
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $tag = "${{ steps.version.outputs.tag }}"
-          $changelog = "Nuevas mejoras en estabilidad y corrección de errores"
-          gh release create $tag "artifacts/MarkHotspot/MarkHotspot.exe" "artifacts/MarkHotspot/MarkSoft-Code-Signing.cer" --title $tag --notes "$changelog`n`nFirma digital: MarkSoft Code Signing. El certificado .cer se incluye para verificar la firma o confiar manualmente en este editor."
- } |
+          $sdkPath = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+          $signTool = Get-ChildItem $sdkPath -Filter signtool.exe -Recurse -ErrorAction SilentlyContinue |
+            Where-Object { $_.Directory.Name -eq 'x64' } |
             Sort-Object FullName -Descending |
             Select-Object -First 1 -ExpandProperty FullName
           if (-not $signTool) { throw "No se encontró SignTool del Windows SDK." }
@@ -116,9 +101,11 @@ jobs:
           if ($env:MARKSOFT_SIGNING_CERT_BASE64 -and $env:MARKSOFT_SIGNING_CERT_PASSWORD) {
             $pfx = Join-Path $env:RUNNER_TEMP "MarkSoft-Code-Signing.pfx"
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:MARKSOFT_SIGNING_CERT_BASE64))
-            $cert = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password (ConvertTo-SecureString $env:MARKSOFT_SIGNING_CERT_PASSWORD -AsPlainText -Force)
+            $password = ConvertTo-SecureString $env:MARKSOFT_SIGNING_CERT_PASSWORD -AsPlainText -Force
+            $certs = Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            $cert = $certs | Select-Object -First 1
             if (-not $cert) { throw "No se pudo importar el certificado MarkSoft almacenado en GitHub Secrets." }
-            Export-Certificate -Cert $cert[0] -FilePath "artifacts/MarkHotspot/MarkSoft-Code-Signing.cer" -Force | Out-Null
+            Export-Certificate -Cert $cert -FilePath "artifacts/MarkHotspot/MarkSoft-Code-Signing.cer" -Force | Out-Null
             & $signTool sign /fd SHA256 /f $pfx /p $env:MARKSOFT_SIGNING_CERT_PASSWORD /tr http://timestamp.digicert.com /td SHA256 $exe
             if ($LASTEXITCODE -ne 0) { throw "SignTool no pudo firmar MarkHotspot.exe con el certificado persistente." }
             Write-Host "Firmado con el certificado persistente de MarkSoft."
@@ -127,7 +114,7 @@ jobs:
             Export-Certificate -Cert $cert -FilePath "artifacts/MarkHotspot/MarkSoft-Code-Signing.cer" -Force | Out-Null
             & $signTool sign /fd SHA256 /sha1 $cert.Thumbprint /s My /tr http://timestamp.digicert.com /td SHA256 $exe
             if ($LASTEXITCODE -ne 0) { throw "SignTool no pudo firmar MarkHotspot.exe con el certificado autofirmado MarkSoft." }
-            Write-Warning "Se usó un certificado autofirmado temporal. El editor se llamará MarkSoft Code Signing, pero para conservar la misma identidad entre compilaciones configura los secretos MARKSOFT_SIGNING_CERT_BASE64 y MARKSOFT_SIGNING_CERT_PASSWORD."
+            Write-Warning "Certificado autofirmado temporal: el editor se muestra como MarkSoft Code Signing, pero la identidad criptográfica cambiará en futuras compilaciones si no se configuran los secretos MARKSOFT_SIGNING_CERT_BASE64 y MARKSOFT_SIGNING_CERT_PASSWORD."
           }
 
           $signature = Get-AuthenticodeSignature $exe
@@ -152,5 +139,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
-          $changelog = "Nuevas mejoras en estabilidad y corrección de errores"
-          gh release create $tag "artifacts/MarkHotspot/MarkHotspot.exe" --title $tag --notes $changelog
+          $notes = @"
+          Nuevas mejoras en estabilidad y corrección de errores.
+
+          Firma digital: MarkSoft Code Signing. Se adjunta MarkSoft-Code-Signing.cer para verificar la firma o instalar manualmente el certificado si se desea confiar en él.
+          "@
+          Set-Content -Path release-notes.md -Value $notes -Encoding utf8
+          gh release create $tag "artifacts/MarkHotspot/MarkHotspot.exe" "artifacts/MarkHotspot/MarkSoft-Code-Signing.cer" --title $tag --notes-file release-notes.md
