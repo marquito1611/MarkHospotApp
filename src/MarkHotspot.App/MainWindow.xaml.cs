@@ -2027,23 +2027,41 @@ catch {{
     private static string NormalizeHotspotMethod(string? method) =>
         method is "HostedNetwork" or "HostedNetworkIcs" or "MobileHotspot" ? method : "MobileHotspot";
 
-    private void HotspotMethodCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    private async void HotspotMethodCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (_loadingHotspotMethod || !IsLoaded || HotspotMethodCombo.SelectedValue is not string method) return;
-        _settings.HotspotMethod = NormalizeHotspotMethod(method);
+        if (_loadingHotspotMethod || !IsLoaded || HotspotMethodCombo.SelectedValue is not string requested) return;
+        requested = NormalizeHotspotMethod(requested);
+        var previous = NormalizeHotspotMethod(_settings.HotspotMethod);
+        if (requested == previous) return;
+
+        // Do not switch the selector away from an active backend: Stop must target
+        // the method that actually created the running hotspot.
+        if (await GetHotspotStateAsync() == TetheringOperationalState.On)
+        {
+            _loadingHotspotMethod = true;
+            HotspotMethodCombo.SelectedValue = previous;
+            _loadingHotspotMethod = false;
+            HotspotMethodStatusText.Text = "Primero detén el hotspot activo; después podrás cambiar el método.";
+            return;
+        }
+
         try
         {
+            _settings.HotspotMethod = requested;
             SaveSettings();
-            HotspotMethodStatusText.Text = _settings.HotspotMethod switch
+            HotspotMethodStatusText.Text = requested switch
             {
                 "HostedNetwork" => "Método clásico seleccionado. Solo funcionará si el controlador Wi-Fi admite Hosted Network; esta opción no activa ICS automáticamente.",
                 "HostedNetworkIcs" => "Se creará la red clásica y después se configurará ICS para compartir Internet.",
                 _ => "Se usará la API Mobile Hotspot de Windows."
             };
-            SetStatus("Método de hotspot guardado. Detén y vuelve a iniciar el hotspot para aplicar el cambio.");
+            SetStatus("Método de hotspot guardado. Pulsa Activar para aplicarlo.");
         }
         catch (Exception ex)
         {
+            _loadingHotspotMethod = true;
+            HotspotMethodCombo.SelectedValue = previous;
+            _loadingHotspotMethod = false;
             HotspotMethodStatusText.Text = "No se pudo guardar el método: " + ex.Message;
         }
     }
