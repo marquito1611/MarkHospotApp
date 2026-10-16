@@ -619,7 +619,20 @@ public partial class MainWindow : Window
                 }
                 row.Ip = device.Ip;
                 var ping = await PingDeviceAsync(device.Ip);
-                row.State = connectedMacs.Contains(mac) || ping ? "Conectado" : "Desconectado";
+                if (connectedMacs.Contains(mac) || ping)
+                {
+                    row.State = "Conectado";
+                    _deviceMissedScans[mac] = 0;
+                    _deviceUnconfirmedScans[mac] = 0;
+                }
+                else
+                {
+                    _deviceUnconfirmedScans.TryGetValue(mac, out var unconfirmedScans);
+                    unconfirmedScans++;
+                    _deviceUnconfirmedScans[mac] = unconfirmedScans;
+                    if (!row.State.Equals("Conectado", StringComparison.OrdinalIgnoreCase) || unconfirmedScans >= 4)
+                        row.State = "Desconectado";
+                }
                 if (IsBlockedDevice(mac, device.Ip) && _appliedBlockFilters.Add(device.Ip))
                 {
                     try
