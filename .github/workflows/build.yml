@@ -1,12 +1,6 @@
 name: Build MarkHotspot (Windows x64)
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - '*.sln'
-      - '.github/workflows/build.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
