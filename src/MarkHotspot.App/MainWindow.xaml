@@ -18,6 +18,31 @@
             </Style.Triggers>
         </Style>
         <Style TargetType="{x:Type ScrollBar}"><Setter Property="Background" Value="{DynamicResource ScrollTrackBrush}"/><Setter Property="Foreground" Value="{DynamicResource ScrollThumbBrush}"/></Style>
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource MutedBrush}"/>
+            <Setter Property="Padding" Value="8"/>
+            <Setter Property="ItemContainerStyle">
+                <Setter.Value>
+                    <Style TargetType="{x:Type ComboBoxItem}">
+                        <Setter Property="Background" Value="{DynamicResource PanelBrush}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/>
+                        <Setter Property="Padding" Value="8,6"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource HoverBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource SelectionBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource MainTextBrush}"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
     <Grid Margin="24">
