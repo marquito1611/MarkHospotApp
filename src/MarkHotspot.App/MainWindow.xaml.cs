@@ -2,6 +2,7 @@ using System.IO;
 using System.Diagnostics;
 using Microsoft.Win32;
 using Windows.Networking.Connectivity;
+using Windows.Devices.WiFi;
 using Windows.Networking.NetworkOperators;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -25,6 +26,7 @@ namespace MarkHotspot;
 public partial class MainWindow : Window
 {
     private readonly ObservableCollection<AdapterRow> _adapters = new();
+    private readonly ObservableCollection<HotspotWifiAdapterRow> _hotspotWifiAdapters = new();
     private readonly ObservableCollection<DeviceRow> _devices = new();
     private readonly ObservableCollection<TrafficLimitRow> _trafficLimits = new();
     private readonly Dictionary<string, DeviceRow> _devicesByMac = new(StringComparer.OrdinalIgnoreCase);
@@ -65,6 +67,7 @@ public partial class MainWindow : Window
         StateChanged += MainWindow_StateChanged;
         _settingsPath = Path.Combine(_dataDirectory, "settings.json");
         AdaptersList.ItemsSource = _adapters;
+        HotspotAdapterCombo.ItemsSource = _hotspotWifiAdapters;
         DevicesList.ItemsSource = _devices;
         TrafficLimitsList.ItemsSource = _trafficLimits;
         _trafficTimer.Tick += (_, _) => UpdateTrafficRates();
@@ -123,6 +126,7 @@ public partial class MainWindow : Window
         }
 
         _deviceDiscoveryTimer.Start();
+        await RefreshHotspotWifiAdaptersAsync();
         await StartModernHotspotOnLaunchAsync();
     }
 
@@ -1095,9 +1099,9 @@ public partial class MainWindow : Window
     }
 
     private void NetworkChange_NetworkAddressChanged(object? sender, EventArgs e) =>
-        Dispatcher.BeginInvoke(new Action(() => _ = RefreshAdaptersAsync()));
+        Dispatcher.BeginInvoke(new Action(() => { _ = RefreshAdaptersAsync(); _ = RefreshHotspotWifiAdaptersAsync(); }));
     private void NetworkChange_NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e) =>
-        Dispatcher.BeginInvoke(new Action(() => _ = RefreshAdaptersAsync()));
+        Dispatcher.BeginInvoke(new Action(() => { _ = RefreshAdaptersAsync(); _ = RefreshHotspotWifiAdaptersAsync(); }));
     private void RefreshAdapters() => _ = RefreshAdaptersAsync();
 
     private Task RefreshAdaptersAsync()
@@ -1110,9 +1114,146 @@ public partial class MainWindow : Window
                 .OrderByDescending(n => n.Status == "Up").ThenBy(n => n.Name).ToList();
             _adapters.Clear();
             foreach (var row in rows) _adapters.Add(row);
+            UpdateHotspotSourceText();
         }
         catch (Exception ex) { SetStatus("Error de diagnóstico de red: " + ex.Message); }
         return Task.CompletedTask;
+    }
+
+    private async Task RefreshHotspotWifiAdaptersAsync()
+    {
+        try
+        {
+            var wirelessInterfaces = NetworkInterface.GetAllNetworkInterfaces()
+                .Where(n => n.NetworkInterfaceType == NetworkInterfaceType.Wireless80211)
+                .ToList();
+            var wifiAdapters = await WiFiAdapter.FindAllAdaptersAsync();
+            var rows = wifiAdapters.Select(adapter =>
+            {
+                var adapterId = adapter.NetworkAdapter.NetworkAdapterId;
+                var nic = wirelessInterfaces.FirstOrDefault(n => Guid.TryParse(n.Id, out var id) && id == adapterId);
+                return nic is null ? null : new HotspotWifiAdapterRow(
+                    adapterId.ToString("D"), nic.Name, nic.OperationalStatus.ToString(), adapter.NetworkAdapter);
+            }).Where(row => row is not null).Cast<HotspotWifiAdapterRow>()
+              .OrderByDescending(row => row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))
+              .ThenBy(row => row.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+
+            _hotspotWifiAdapters.Clear();
+            foreach (var row in rows) _hotspotWifiAdapters.Add(row);
+
+            if (string.IsNullOrWhiteSpace(_settings.SelectedHotspotAdapterId))
+            {
+                var sourceProfile = NetworkInformation.GetInternetConnectionProfile();
+                var sourceId = sourceProfile?.NetworkAdapter.NetworkAdapterId.ToString("D");
+                var preferred = rows.FirstOrDefault(row => row.Id.Equals(sourceId, StringComparison.OrdinalIgnoreCase))
+                    ?? rows.FirstOrDefault(row => row.Status.Equals("Up", StringComparison.OrdinalIgnoreCase))
+                    ?? rows.FirstOrDefault();
+                if (preferred is not null)
+                {
+                    _settings.SelectedHotspotAdapterId = preferred.Id;
+                    SaveSettings();
+                }
+            }
+
+            HotspotAdapterCombo.SelectedValue = _settings.SelectedHotspotAdapterId;
+            if (rows.Count == 0)
+                HotspotAdapterStatusText.Text = "Windows no detectó adaptadores Wi-Fi compatibles para el hotspot.";
+            else if (HotspotAdapterCombo.SelectedItem is null)
+                HotspotAdapterStatusText.Text = "El adaptador guardado no está disponible. Conéctalo o selecciona otro y pulsa Guardar.";
+            else
+                HotspotAdapterStatusText.Text = $"{rows.Count} adaptador(es) Wi-Fi detectado(s). Pulsa Guardar para aplicar la selección.";
+
+            UpdateHotspotSourceText();
+        }
+        catch (Exception ex)
+        {
+            HotspotAdapterStatusText.Text = "No se pudieron enumerar los adaptadores Wi-Fi: " + ex.Message;
+            UpdateHotspotSourceText();
+        }
+    }
+
+    private void UpdateHotspotSourceText()
+    {
+        try
+        {
+            var profile = NetworkInformation.GetInternetConnectionProfile();
+            if (profile is null)
+            {
+                HotspotSourceText.Text = "Internet recibida desde: no detectada. Conecta la PC a Internet.";
+                return;
+            }
+            var adapterId = profile.NetworkAdapter.NetworkAdapterId;
+            var nic = NetworkInterface.GetAllNetworkInterfaces()
+                .FirstOrDefault(n => Guid.TryParse(n.Id, out var id) && id == adapterId);
+            HotspotSourceText.Text = "Internet recibida desde: " + (nic?.Name ?? profile.ProfileName);
+        }
+        catch { HotspotSourceText.Text = "Internet recibida desde: no se pudo identificar automáticamente."; }
+    }
+
+    private HotspotWifiAdapterRow? GetSelectedHotspotWifiAdapter() =>
+        _hotspotWifiAdapters.FirstOrDefault(row => row.Id.Equals(_settings.SelectedHotspotAdapterId, StringComparison.OrdinalIgnoreCase));
+
+    private NetworkOperatorTetheringManager CreateTetheringManager(ConnectionProfile profile)
+    {
+        var selectedAdapter = GetSelectedHotspotWifiAdapter();
+        return selectedAdapter is null
+            ? NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile)
+            : NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile, selectedAdapter.NetworkAdapter);
+    }
+
+    private async void SaveHotspotAdapterButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (HotspotAdapterCombo.SelectedItem is not HotspotWifiAdapterRow selected)
+        {
+            HotspotAdapterStatusText.Text = "Selecciona un adaptador Wi-Fi disponible antes de guardar.";
+            return;
+        }
+        if (SaveHotspotAdapterButton.IsEnabled == false) return;
+        SaveHotspotAdapterButton.IsEnabled = false;
+        try
+        {
+            var oldId = _settings.SelectedHotspotAdapterId;
+            if (selected.Id.Equals(oldId, StringComparison.OrdinalIgnoreCase))
+            {
+                SaveSettings();
+                HotspotAdapterStatusText.Text = "El adaptador seleccionado ya está guardado.";
+                return;
+            }
+
+            var state = await GetModernHotspotStateAsync();
+            if (state == TetheringOperationalState.On)
+            {
+                HotspotAdapterStatusText.Text = "Deteniendo el hotspot para cambiar el adaptador…";
+                var stopped = await StopModernHotspotAsync();
+                if (!stopped.Success)
+                {
+                    HotspotAdapterStatusText.Text = "No se cambió el adaptador: " + stopped.Message;
+                    return;
+                }
+            }
+
+            _settings.SelectedHotspotAdapterId = selected.Id;
+            SaveSettings();
+            HotspotAdapterStatusText.Text = state == TetheringOperationalState.On
+                ? "Adaptador guardado. Reiniciando el hotspot…"
+                : "Adaptador Wi-Fi guardado.";
+
+            if (state == TetheringOperationalState.On)
+            {
+                var started = await StartModernHotspotAsync();
+                HotspotStateText.Text = started.Success ? "Hotspot Activo" : "Hotspot Detenido";
+                HotspotDetailText.Text = started.Message;
+                HotspotAdapterStatusText.Text = started.Success
+                    ? "Adaptador aplicado; el hotspot volvió a iniciarse correctamente."
+                    : "El adaptador se guardó, pero Windows no pudo reiniciar el hotspot: " + started.Message;
+            }
+            UpdateHotspotSourceText();
+        }
+        catch (Exception ex)
+        {
+            HotspotAdapterStatusText.Text = "No se pudo guardar el adaptador: " + ex.Message;
+        }
+        finally { SaveHotspotAdapterButton.IsEnabled = true; }
     }
 
     private async Task StartModernHotspotOnLaunchAsync()
@@ -1154,7 +1295,10 @@ public partial class MainWindow : Window
             // an extra virtual Local Area Connection alongside the modern hotspot.
             await DisableLegacyHostedNetworkAsync();
 
-            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
+            var selectedAdapter = GetSelectedHotspotWifiAdapter();
+            if (selectedAdapter is null)
+                return (false, "No hay un adaptador Wi-Fi seleccionado disponible. En Configuración Wi-Fi, selecciona un adaptador y pulsa Guardar.");
+            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile, selectedAdapter.NetworkAdapter);
 
             // Windows Mobile Hotspot otherwise keeps its own saved SSID/passphrase
             // (often a DESKTOP-* name and an automatically generated password).
@@ -1217,7 +1361,7 @@ public partial class MainWindow : Window
         {
             var profile = NetworkInformation.GetInternetConnectionProfile();
             if (profile is null) return (false, "Windows no expone un perfil de conexión para controlar el Mobile Hotspot.");
-            var manager = NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile);
+            var manager = CreateTetheringManager(profile);
             if (manager.TetheringOperationalState == TetheringOperationalState.Off)
                 return (true, "Windows confirma que el Mobile Hotspot está detenido.");
 
@@ -1240,7 +1384,7 @@ public partial class MainWindow : Window
             var profile = NetworkInformation.GetInternetConnectionProfile();
             if (profile is null) return Task.FromResult<TetheringOperationalState?>(null);
             return Task.FromResult<TetheringOperationalState?>(
-                NetworkOperatorTetheringManager.CreateFromConnectionProfile(profile).TetheringOperationalState);
+                CreateTetheringManager(profile).TetheringOperationalState);
         }
         catch { return Task.FromResult<TetheringOperationalState?>(null); }
     }
@@ -1319,6 +1463,16 @@ public partial class MainWindow : Window
 
     private void SetStatus(string message) => HotspotDetailText.Text = message;
     public sealed record AdapterRow(string Name, string Type, string Status, string Speed);
+    public sealed class HotspotWifiAdapterRow
+    {
+        public HotspotWifiAdapterRow(string id, string displayName, string status, NetworkAdapter networkAdapter)
+        { Id = id; DisplayName = displayName; Status = status; NetworkAdapter = networkAdapter; }
+        public string Id { get; }
+        public string DisplayName { get; }
+        public string Status { get; }
+        public NetworkAdapter NetworkAdapter { get; }
+        public override string ToString() => DisplayName;
+    }
     public sealed class DeviceRow : INotifyPropertyChanged
     {
         private string _ip;
@@ -1369,6 +1523,7 @@ public partial class MainWindow : Window
         public bool StartWithWindows { get; set; } = true;
         public string Ssid { get; set; } = "MarkHotspot";
         public string Password { get; set; } = "ChangeMe123";
+        public string SelectedHotspotAdapterId { get; set; } = "";
         public List<BlockedDevice> BlockedDevices { get; set; } = new();
         public List<TrafficLimitSetting> TrafficLimits { get; set; } = new();
         public Dictionary<string, string> DeviceNames { get; set; } = new(StringComparer.OrdinalIgnoreCase);
