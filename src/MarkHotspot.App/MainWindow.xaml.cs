@@ -2161,6 +2161,9 @@ catch {{
                 var sharing = await ConfigureInternetConnectionSharingAsync(profile!.NetworkAdapter.NetworkAdapterId);
                 if (!sharing.Success)
                 {
+                    // ICS may have partially applied one role before Windows returned
+                    // an error. Roll back sharing before stopping the virtual WLAN.
+                    await DisableAllInternetSharingAsync();
                     await RunNetshAsync("wlan stop hostednetwork");
                     return (false, "La red Wi-Fi se creó, pero no se pudo activar ICS: " + sharing.Message);
                 }
@@ -2346,7 +2349,10 @@ catch {{
             {
                 hotspotNic = NetworkInterface.GetAllNetworkInterfaces()
                     .Where(IsLikelyHotspotPrivateInterface)
-                    .OrderByDescending(nic => nic.GetIPProperties().UnicastAddresses.Any(address => address.Address.ToString() == "192.168.137.1"))
+                    // Prefer the explicit legacy Hosted Network adapter over other
+                    // virtual/Local Area Connection interfaces that may also be present.
+                    .OrderByDescending(nic => nic.Description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(nic => nic.GetIPProperties().UnicastAddresses.Any(address => address.Address.ToString() == "192.168.137.1"))
                     .FirstOrDefault();
                 if (hotspotNic is not null) break;
                 await Task.Delay(600);
