@@ -1421,6 +1421,11 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
 
     private static void ApplyWindowsQosPolicies(TrafficLimitSetting setting)
     {
+        if (!setting.Enabled)
+        {
+            RemoveWindowsQosPolicies(setting.Mac);
+            return;
+        }
         if (!IPAddress.TryParse(setting.Ip, out var ip) || ip.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
             throw new InvalidOperationException("El dispositivo no tiene una dirección IPv4 válida para aplicar las políticas QoS.");
 
@@ -1510,19 +1515,63 @@ catch {{
         }
     }
 
+    private static void RemoveWindowsQosPolicies(string mac)
+    {
+        var key = Regex.Replace(mac, "[^A-Fa-f0-9]", "");
+        if (string.IsNullOrWhiteSpace(key)) return;
+        var upName = "MarkHotspot-UL-" + key;
+        var downName = "MarkHotspot-DL-" + key;
+        var script = "$ErrorActionPreference = 'Stop'\n$ProgressPreference = 'SilentlyContinue'\nImport-Module NetQos -ErrorAction Stop\n" +
+            "Remove-NetQosPolicy -Name '" + upName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
+            "Remove-NetQosPolicy -Name '" + downName + "' -Confirm:$false -ErrorAction SilentlyContinue\n" +
+            "[Console]::Out.WriteLine('MARKHOTSPOT_REMOVED')";
+        var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+        var psi = new ProcessStartInfo("powershell.exe",
+            "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
+        {
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardOutput = true, RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
+        };
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("No se pudo iniciar PowerShell para retirar las políticas QoS.");
+        var stdoutTask = process.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+        if (!process.WaitForExit(30000))
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            throw new TimeoutException("Windows tardó demasiado en retirar las políticas QoS.");
+        }
+        Task.WaitAll(stdoutTask, stderrTask);
+        if (process.ExitCode != 0 || !stdoutTask.Result.Contains("MARKHOTSPOT_REMOVED", StringComparison.Ordinal))
+        {
+            var detail = Short((stdoutTask.Result + " " + stderrTask.Result).Trim());
+            throw new InvalidOperationException("Windows no pudo retirar las políticas QoS: " +
+                (string.IsNullOrWhiteSpace(detail) ? "error sin detalles" : detail));
+        }
+    }
+
     private void ConfigureSelectedDeviceTraffic()
     {
         if (DevicesList.SelectedItem is not DeviceRow selected) return;
         var saved = _settings.TrafficLimits.FirstOrDefault(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
         var dialog = new Window
         {
-            Title = "Limitar tráfico del dispositivo", Owner = this, Width = 470, Height = 310,
+            Title = "Limitar tráfico del dispositivo", Owner = this, Width = 470, Height = 355,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, ResizeMode = ResizeMode.NoResize,
             Background = (System.Windows.Media.Brush)Application.Current.Resources["PanelBrush"],
             Foreground = (System.Windows.Media.Brush)Application.Current.Resources["MainTextBrush"]
         };
         var root = new System.Windows.Controls.StackPanel { Margin = new Thickness(22) };
-        root.Children.Add(new System.Windows.Controls.TextBlock { Text = selected.Name, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,16) });
+        root.Children.Add(new System.Windows.Controls.TextBlock { Text = selected.Name, FontSize = 18, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0,0,0,12) });
+        var enabledToggle = new System.Windows.Controls.CheckBox
+        {
+            Content = "Activar límite de tráfico",
+            IsChecked = saved?.Enabled ?? true,
+            Margin = new Thickness(0,0,0,14),
+            FontSize = 14
+        };
+        root.Children.Add(enabledToggle);
         root.Children.Add(new System.Windows.Controls.TextBlock { Text = "↑  Velocidad máxima de subida (KB/s)", Margin = new Thickness(0,0,0,5) });
         var uploadBox = new System.Windows.Controls.TextBox { Text = (saved?.UploadKBps ?? Math.Max(1, (saved?.UploadMbps ?? 3) * 125)).ToString(), Padding = new Thickness(9), Margin = new Thickness(0,0,0,14) };
         root.Children.Add(uploadBox);
@@ -1543,23 +1592,28 @@ catch {{
             }
             try
             {
-                _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
                 var setting = new TrafficLimitSetting
                 {
                     Mac = selected.Mac.ToUpperInvariant(), Ip = selected.Ip,
                     UploadKBps = up, DownloadKBps = down,
                     UploadMbps = Math.Clamp((int)Math.Ceiling(up / 125.0), 1, 50),
                     DownloadMbps = Math.Clamp((int)Math.Ceiling(down / 125.0), 1, 100),
+                    Enabled = enabledToggle.IsChecked == true,
                     UpdatedAt = DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss")
                 };
-                ApplyWindowsQosPolicies(setting);
+                if (setting.Enabled) ApplyWindowsQosPolicies(setting);
+                else RemoveWindowsQosPolicies(setting.Mac);
                 _settings.TrafficLimits.RemoveAll(x => x.Mac.Equals(selected.Mac, StringComparison.OrdinalIgnoreCase));
                 _settings.TrafficLimits.Add(setting);
                 PersistDeviceCache();
                 SaveSettings();
                 SyncTrafficLimitRows();
-                TrafficEngineStatusText.Text = $"Políticas QoS de Windows instaladas para {selected.Name}: ↑ {up} KB/s, ↓ {down} KB/s.";
-                SetStatus($"Se guardaron los límites y se instalaron las políticas QoS de Windows para {selected.Name}: subida {up} KB/s, bajada {down} KB/s.");
+                TrafficEngineStatusText.Text = setting.Enabled
+                    ? $"Límite activado para {selected.Name}: ↑ {up} KB/s, ↓ {down} KB/s."
+                    : $"Límite desactivado para {selected.Name}; se retiraron las políticas QoS.";
+                SetStatus(setting.Enabled
+                    ? $"Se guardó el límite de {selected.Name}: subida {up} KB/s, bajada {down} KB/s."
+                    : $"Se desactivó el límite de {selected.Name}.");
                 dialog.DialogResult = true;
             }
             catch (Exception ex) { System.Windows.MessageBox.Show(dialog, "No se pudieron guardar los límites: " + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error); }
