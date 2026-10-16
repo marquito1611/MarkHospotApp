@@ -509,15 +509,12 @@ public partial class MainWindow : Window
         {
             // Check Npcap once per app session. If it is missing, offer the official
             // installer with Windows elevation; never open repeated installers on timer ticks.
-            if (!IsNpcapInstalled())
+            if (!IsNpcapInstalled() && !_npcapInstallAttempted)
             {
-                    if (!_npcapInstallAttempted)
-                {
-                    _npcapInstallAttempted = true;
-                    var installed = await DownloadAndInstallNpcapAsync();
-                    if (installed)
-                    else
-                }
+                _npcapInstallAttempted = true;
+                var installed = await DownloadAndInstallNpcapAsync();
+                if (!installed)
+                    SetStatus("Npcap no está instalado; la captura de tráfico en tiempo real no estará disponible.");
             }
 
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
