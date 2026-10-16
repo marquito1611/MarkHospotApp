@@ -461,16 +461,18 @@ public partial class MainWindow : Window
             return;
         }
 
+        var selected = (DeviceRow)DevicesList.SelectedItem;
+        var action = IsBlockedDevice(selected.Mac, selected.Ip) ? "desbloquear" : "bloquear";
         BlockDeviceButton.IsEnabled = false;
         try
         {
-            SetStatus("Aplicando el bloqueo de red…");
+            SetStatus(action == "bloquear" ? "Aplicando el bloqueo de red…" : "Quitando el bloqueo de red…");
             await ToggleDeviceBlockAsync();
         }
         catch (Exception ex)
         {
-            SetStatus("No se pudo bloquear el dispositivo: " + ex.Message);
-            System.Windows.MessageBox.Show(this, "No se pudo bloquear el dispositivo:\n" + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error);
+            SetStatus($"No se pudo {action} el dispositivo: " + ex.Message);
+            System.Windows.MessageBox.Show(this, $"No se pudo {action} el dispositivo:\n" + ex.Message, "MarkHotspot", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         finally
         {
