@@ -46,7 +46,7 @@ public partial class MainWindow : Window
     private bool _allowExit;
     private bool _exitInProgress;
     private readonly DispatcherTimer _hotspotStateTimer = new() { Interval = TimeSpan.FromSeconds(2) };
-    private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(5) };
+    private readonly DispatcherTimer _deviceDiscoveryTimer = new() { Interval = TimeSpan.FromSeconds(2) };
     private bool _deviceScanInProgress;
     private bool _npcapInstallAttempted;
     private bool _hotspotOperationInProgress;
@@ -511,24 +511,19 @@ public partial class MainWindow : Window
             // installer with Windows elevation; never open repeated installers on timer ticks.
             if (!IsNpcapInstalled())
             {
-                DeviceScanStatusText.Text = "Npcap no está instalado; se necesita para capturar tráfico en tiempo real.";
-                if (!_npcapInstallAttempted)
+                    if (!_npcapInstallAttempted)
                 {
                     _npcapInstallAttempted = true;
                     var installed = await DownloadAndInstallNpcapAsync();
                     if (installed)
-                        DeviceScanStatusText.Text = "Npcap instalado. Preparando la captura de tráfico…";
                     else
-                        DeviceScanStatusText.Text = "Npcap no está disponible. Instálalo y pulsa Actualizar para reintentar.";
                 }
             }
 
-            DeviceScanStatusText.Text = "Actualizando dispositivos conectados…";
             var hotspotAddresses = GetHotspotInterfaceAddresses().ToList();
             if (hotspotAddresses.Count == 0)
             {
                 DevicesCountText.Text = _devices.Count.ToString();
-                DeviceScanStatusText.Text = "Windows no expone todavía la interfaz local del hotspot. La búsqueda automática volverá a intentarlo.";
                 return;
             }
 
@@ -587,18 +582,31 @@ public partial class MainWindow : Window
                 if (!found.ContainsKey(row.Mac) && !connectedMacs.Contains(row.Mac))
                     row.State = "Desconectado";
 
-            var ordered = _devices.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase).ToList();
-            _devices.Clear();
-            foreach (var row in ordered) _devices.Add(row);
+            // Keep existing DeviceRow objects in place. Clearing and rebuilding the
+            // ObservableCollection on every poll resets ListView selection and hover/click state.
+            // New devices are inserted in sorted order; existing rows are never re-added.
+            foreach (var device in found.Values)
+            {
+                var mac = device.Mac.ToUpperInvariant();
+                if (!_devicesByMac.TryGetValue(mac, out var row)) continue;
+                if (!_devices.Contains(row))
+                {
+                    var insertAt = 0;
+                    while (insertAt < _devices.Count &&
+                           StringComparer.OrdinalIgnoreCase.Compare(_devices[insertAt].Name, row.Name) <= 0)
+                        insertAt++;
+                    _devices.Insert(insertAt, row);
+                }
+            }
+
             SyncTrafficLimitRows();
             StartTrafficCapture();
             DevicesCountText.Text = _devices.Count.ToString();
-            SyncTrafficLimitRows();
             PersistDeviceCache();
             SaveSettings();
-            DeviceScanStatusText.Text = _captureStarted ? $"Lista actualizada: {_devices.Count} dispositivos. Tráfico en vivo activo." : $"Lista actualizada: {_devices.Count} dispositivos. Para ver tráfico en vivo, verifica Npcap y la interfaz de captura.";
+            DeviceScanStatusText.Text = "Detección automática activada";
         }
-        catch (Exception ex) { DeviceScanStatusText.Text = "Error en la detección automática: " + ex.Message; }
+        catch (Exception ex) { SetStatus("Error en la detección automática: " + ex.Message); }
         finally
         {
             _deviceScanInProgress = false;
@@ -754,7 +762,7 @@ public partial class MainWindow : Window
         if (_captureStarted) return;
         if (!IsNpcapInstalled())
         {
-            DeviceScanStatusText.Text = "Npcap no está instalado; no se puede capturar tráfico en tiempo real.";
+            SetStatus("Npcap no está instalado; no se puede capturar tráfico en tiempo real.");
             return;
         }
 
@@ -775,7 +783,7 @@ public partial class MainWindow : Window
                   n.Description.Contains(d.Description, StringComparison.OrdinalIgnoreCase)))));
             if (candidate is null)
             {
-                DeviceScanStatusText.Text = "Npcap está instalado, pero no se encontró una interfaz de captura que coincida con el hotspot.";
+                SetStatus("Npcap está instalado, pero no se encontró una interfaz de captura que coincida con el hotspot.");
                 return;
             }
 
@@ -784,12 +792,11 @@ public partial class MainWindow : Window
             candidate.StartCapture();
             _captureDevice = candidate;
             _captureStarted = true;
-            DeviceScanStatusText.Text = "Captura de tráfico en tiempo real activa.";
         }
         catch (Exception ex)
         {
             StopTrafficCapture();
-            DeviceScanStatusText.Text = "No se pudo iniciar la captura de tráfico: " + ex.Message;
+            SetStatus("No se pudo iniciar la captura de tráfico: " + ex.Message);
         }
     }
 
