@@ -1844,15 +1844,57 @@ New-NetQosPolicy -Name $upName -IPSrcAddressMatchCondition $ip -ThrottleRateActi
 
     private static void ApplyStartupRegistration(bool enabled)
     {
-        using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true)
-            ?? Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true);
+        var executable = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
+        if (enabled && string.IsNullOrWhiteSpace(executable))
+            throw new InvalidOperationException("No se pudo determinar la ruta del ejecutable.");
+
+        // Remove the old Run-key entry. The app requestsAdministrator in its manifest,
+        // so Windows Run launches it behind a UAC prompt and it cannot start unattended.
+        using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run", writable: true))
+            key?.DeleteValue("MarkHotspot", throwOnMissingValue: false);
+
         if (enabled)
         {
-            var executable = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName;
-            if (string.IsNullOrWhiteSpace(executable)) throw new InvalidOperationException("No se pudo determinar la ruta del ejecutable.");
-            key.SetValue("MarkHotspot", "\"" + executable + "\" --background");
+            // A logon task configured with highest privileges lets the elevated app start
+            // without displaying a UAC prompt. --background keeps the window in the tray.
+            RunStartupTaskCommand("/Create", "/TN", "MarkHotspot", "/SC", "ONLOGON",
+                "/TR", "\"" + executable + "\" --background", "/RL", "HIGHEST", "/F");
         }
-        else key.DeleteValue("MarkHotspot", throwOnMissingValue: false);
+        else
+        {
+            // schtasks returns an error when the task does not exist; query first so that
+            // disabling autostart is still idempotent on a clean installation.
+            if (RunStartupTaskCommand("/Query", "/TN", "MarkHotspot", throwOnFailure: false) == 0)
+                RunStartupTaskCommand("/Delete", "/TN", "MarkHotspot", "/F");
+        }
+    }
+
+    private static int RunStartupTaskCommand(params string[] arguments) =>
+        RunStartupTaskCommand(arguments, throwOnFailure: true);
+
+    private static int RunStartupTaskCommand(string[] arguments, bool throwOnFailure)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.SystemDirectory, "schtasks.exe"),
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        foreach (var argument in arguments)
+            startInfo.ArgumentList.Add(argument);
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("No se pudo iniciar el Programador de tareas de Windows.");
+        if (!process.WaitForExit(15000))
+        {
+            try { process.Kill(entireProcessTree: true); } catch { }
+            throw new TimeoutException("El Programador de tareas de Windows tardó demasiado en responder.");
+        }
+
+        if (throwOnFailure && process.ExitCode != 0)
+            throw new InvalidOperationException(
+                "Windows no pudo configurar el inicio automático (schtasks, código " + process.ExitCode + ").");
+        return process.ExitCode;
     }
 
     private void SetStatus(string message) => HotspotDetailText.Text = message;
