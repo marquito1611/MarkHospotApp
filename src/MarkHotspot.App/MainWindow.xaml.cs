@@ -750,9 +750,10 @@ public partial class MainWindow : Window
                 .ToList();
             var devices = CaptureDeviceList.Instance;
             var candidate = devices.FirstOrDefault(d => hotspotNics.Any(n =>
-                d.Name.Contains(n.Id.Trim('{', '}'), StringComparison.OrdinalIgnoreCase) ||
-                d.Description.Contains(n.Description, StringComparison.OrdinalIgnoreCase) ||
-                n.Description.Contains(d.Description, StringComparison.OrdinalIgnoreCase)));
+                (!string.IsNullOrWhiteSpace(n.Id) && d.Name.Contains(n.Id.Trim('{', '}'), StringComparison.OrdinalIgnoreCase)) ||
+                (!string.IsNullOrWhiteSpace(d.Description) && !string.IsNullOrWhiteSpace(n.Description) &&
+                 (d.Description.Contains(n.Description, StringComparison.OrdinalIgnoreCase) ||
+                  n.Description.Contains(d.Description, StringComparison.OrdinalIgnoreCase)))));
             if (candidate is null) return;
             candidate.OnPacketArrival += TrafficPacketArrived;
             candidate.Open(DeviceModes.Promiscuous, 1000);
