@@ -2173,20 +2173,75 @@ catch {{
 
     private async Task RefreshHotspotStateAsync()
     {
-        if (_hotspotOperationInProgress) return;
+        if (_hotspotOperationInProgress || _autoRecoveryInProgress) return;
+
         var state = await GetHotspotStateAsync();
+        var sourceInternetAvailable = IsSelectedSourceInternetAvailable();
+
+        if (!sourceInternetAvailable && (_lastObservedHotspotOn || state == TetheringOperationalState.On))
+            _sourceInternetLostWhileHotspotActive = true;
+
         if (state == TetheringOperationalState.On)
         {
+            _lastObservedHotspotOn = true;
+            if (sourceInternetAvailable)
+                _sourceInternetLostWhileHotspotActive = false;
+
             HotspotStateText.Text = "Hotspot Activo";
             HotspotDetailText.Text = NormalizeHotspotMethod(_settings.HotspotMethod) == "MobileHotspot"
                 ? "Windows confirma que Mobile Hotspot está activo."
                 : "Windows confirma que Hosted Network está activo.";
+            return;
         }
-        else if (state == TetheringOperationalState.Off)
+
+        if (state == TetheringOperationalState.Off)
         {
             HotspotStateText.Text = "Hotspot Detenido";
-            HotspotDetailText.Text = "Windows confirma que el método seleccionado está detenido.";
+            if (_sourceInternetLostWhileHotspotActive && sourceInternetAvailable)
+            {
+                _autoRecoveryInProgress = true;
+                try
+                {
+                    HotspotStateText.Text = "Restableciendo hotspot…";
+                    HotspotDetailText.Text = "Internet volvió. MarkHotspot está intentando reactivar el hotspot automáticamente.";
+                    var result = await StartHotspotAsync();
+                    if (result.Success)
+                    {
+                        _lastObservedHotspotOn = true;
+                        _sourceInternetLostWhileHotspotActive = false;
+                        HotspotStateText.Text = "Hotspot Activo";
+                        HotspotDetailText.Text = "Hotspot reactivado automáticamente tras recuperar Internet.";
+                        await RefreshAdaptersAsync();
+                    }
+                    else
+                    {
+                        // Keep recovery armed so the 2-second state timer can retry.
+                        HotspotDetailText.Text = "Windows no pudo reactivar el hotspot; se volverá a intentar automáticamente. " + result.Message;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    HotspotDetailText.Text = "Falló el intento de recuperación automática; se volverá a intentar. " + ex.Message;
+                }
+                finally { _autoRecoveryInProgress = false; }
+                return;
+            }
+
+            HotspotDetailText.Text = sourceInternetAvailable
+                ? "Windows confirma que el método seleccionado está detenido."
+                : "Hotspot detenido: esperando a que vuelva Internet en el adaptador de origen seleccionado.";
         }
+    }
+
+    private bool IsSelectedSourceInternetAvailable()
+    {
+        try
+        {
+            var profile = GetSelectedInternetConnectionProfile();
+            return profile is not null &&
+                   profile.GetNetworkConnectivityLevel() == NetworkConnectivityLevel.InternetAccess;
+        }
+        catch { return false; }
     }
 
     private async Task<(bool Success, string Message)> StartHostedNetworkAsync(bool shareInternet)
