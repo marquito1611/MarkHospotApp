@@ -2098,7 +2098,8 @@ catch {{
     }
 
     private static string NormalizeHotspotMethod(string? method) =>
-        method is "HostedNetwork" or "HostedNetworkIcs" or "MobileHotspot" ? method : "MobileHotspot";
+        // Migrate the removed classic option to the remaining compatibility mode.
+        method is "HostedNetwork" or "HostedNetworkIcs" ? "HostedNetworkIcs" : "MobileHotspot";
 
     private async void HotspotMethodCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
@@ -2124,9 +2125,8 @@ catch {{
             SaveSettings();
             HotspotMethodStatusText.Text = requested switch
             {
-                "HostedNetwork" => "Método clásico seleccionado. Solo funcionará si el controlador Wi-Fi admite Hosted Network; esta opción no activa ICS automáticamente.",
-                "HostedNetworkIcs" => "Se creará la red clásica y después se configurará ICS para compartir Internet.",
-                _ => "Se usará la API Mobile Hotspot de Windows."
+                "HostedNetworkIcs" => "Modo de compatibilidad: inicia Hosted Network y configura ICS para compartir Internet. Requiere que el controlador admita Hosted Network.",
+                _ => "Método recomendado: API Mobile Hotspot de Windows, con el uso compartido administrado por Windows."
             };
             SetStatus("Método de hotspot guardado. Pulsa Activar para aplicarlo.");
         }
@@ -2142,7 +2142,6 @@ catch {{
     private async Task<(bool Success, string Message)> StartHotspotAsync() =>
         NormalizeHotspotMethod(_settings.HotspotMethod) switch
         {
-            "HostedNetwork" => await StartHostedNetworkAsync(false),
             "HostedNetworkIcs" => await StartHostedNetworkAsync(true),
             _ => await StartModernHotspotAsync()
         };
@@ -2175,7 +2174,9 @@ catch {{
         if (state == TetheringOperationalState.On)
         {
             HotspotStateText.Text = "Hotspot Activo";
-            HotspotDetailText.Text = "Windows confirma que el método seleccionado está activo.";
+            HotspotDetailText.Text = NormalizeHotspotMethod(_settings.HotspotMethod) == "MobileHotspot"
+                ? "Windows confirma que Mobile Hotspot está activo."
+                : "Windows confirma que Hosted Network está activo.";
         }
         else if (state == TetheringOperationalState.Off)
         {
@@ -2388,11 +2389,11 @@ catch {{
             if (!confirmed)
                 return (false, "Windows aceptó la solicitud, pero no confirmó que el Mobile Hotspot esté activo.");
 
-            var sharing = await ConfigureInternetConnectionSharingAsync(profile.NetworkAdapter.NetworkAdapterId);
-            if (!sharing.Success)
-                return (false, "El hotspot está activo, pero no se pudo configurar el paso de Internet a la interfaz local: " + sharing.Message);
-
-            return (true, $"Hotspot activo con «{ssid}». Adaptador de salida: {selectedHotspotAdapter.DisplayName}. Internet recibida desde: {GetSelectedInternetDisplayName()}.");
+            // NetworkOperatorTetheringManager owns the public/private connection and
+            // NAT configuration for Mobile Hotspot. Re-applying legacy HNetCfg ICS here
+            // can bind a stale "Local Area Connection*" and tear down a working hotspot.
+            // Keep manual HNetCfg sharing exclusively for the legacy compatibility mode.
+            return (true, $"Hotspot activo con «{ssid}». Adaptador de salida: {selectedHotspotAdapter.DisplayName}. Internet recibida desde: {GetSelectedInternetDisplayName()}. Windows administra el uso compartido.");
         }
         catch (Exception ex)
         {
@@ -2425,7 +2426,13 @@ catch {{
                     // Prefer the explicit legacy Hosted Network adapter over other
                     // virtual/Local Area Connection interfaces that may also be present.
                     .OrderByDescending(nic => nic.Description.Contains("Hosted Network", StringComparison.OrdinalIgnoreCase))
+                    // Legacy Hosted Network normally uses 192.168.173.0/24; full ICS commonly
+                    // uses 192.168.137.0/24. Prefer either known hotspot gateway before a generic
+                    // Local Area Connection* interface, which may belong to an unrelated adapter.
+                    .ThenByDescending(nic => nic.GetIPProperties().UnicastAddresses.Any(address => address.Address.ToString() == "192.168.173.1"))
                     .ThenByDescending(nic => nic.GetIPProperties().UnicastAddresses.Any(address => address.Address.ToString() == "192.168.137.1"))
+                    .ThenByDescending(nic => nic.Name.Contains("Local Area Connection*", StringComparison.OrdinalIgnoreCase) ||
+                                             nic.Name.Contains("Conexión de área local*", StringComparison.OrdinalIgnoreCase))
                     .FirstOrDefault();
                 if (hotspotNic is not null) break;
                 await Task.Delay(600);
