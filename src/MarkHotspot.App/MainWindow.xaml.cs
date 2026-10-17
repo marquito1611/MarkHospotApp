@@ -563,7 +563,7 @@ public partial class MainWindow : Window
                 {
                     HotspotStateText.Text = "Hotspot Activo";
                     CredentialsStatusText.Text = "Nombre y contraseña guardados y aplicados.";
-                    RestartNetworkHintButton.Visibility = Visibility.Collapsed;
+                    RestartNetworkHintButton.Visibility = Visibility.Visible;
                 }
                 else
                 {
@@ -587,7 +587,7 @@ public partial class MainWindow : Window
         {
             HotspotStateText.Text = "Reiniciando red…";
             HotspotDetailText.Text = "Deteniendo el hotspot y reiniciando los adaptadores y servicios de red de Windows. La conexión puede interrumpirse durante unos segundos.";
-            RestartNetworkHintButton.Visibility = Visibility.Collapsed;
+            RestartNetworkHintButton.Visibility = Visibility.Visible;
             try { await StopHotspotAsync(); } catch { }
 
             const string script = @"
@@ -797,7 +797,7 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
                 RestartNetworkHintButton.Visibility = Visibility.Visible;
                 return;
             }
-            RestartNetworkHintButton.Visibility = Visibility.Collapsed;
+            RestartNetworkHintButton.Visibility = Visibility.Visible;
             await ConfirmHotspotStateAsync();
             await RefreshAdaptersAsync();
             await ScanDevicesAsync();
@@ -815,7 +815,7 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
             var result = await StopHotspotAsync();
             HotspotStateText.Text = "Hotspot Detenido";
             HotspotDetailText.Text = result.Message;
-            RestartNetworkHintButton.Visibility = result.Success ? Visibility.Collapsed : Visibility.Visible;
+            RestartNetworkHintButton.Visibility = Visibility.Visible;
             await RefreshModernHotspotStateAsync();
         }
         catch (Exception ex) { SetStatus("Error al detener el Mobile Hotspot: " + ex.Message); RestartNetworkHintButton.Visibility = Visibility.Visible; }
@@ -2266,7 +2266,10 @@ catch {{
                 return (false, "Hosted Network se detuvo, pero no se pudo limpiar ICS: " + sharing.Message);
             if (disallowed.ExitCode != 0)
                 return (false, "La red se detuvo, pero Windows no pudo deshabilitar Hosted Network: " + Short(disallowed.Output));
-            return (true, "Hosted Network detenido e ICS desactivado.");
+            var virtualAdapter = await RecycleHotspotVirtualAdapterAsync();
+            if (!virtualAdapter.Success)
+                return (false, "Hosted Network se detuvo e ICS se desactivó, pero no se pudo reiniciar el adaptador virtual: " + virtualAdapter.Message);
+            return (true, "Hosted Network detenido, ICS desactivado y adaptador virtual reiniciado.");
         }
         catch (Exception ex) { return (false, "Error al detener Hosted Network: " + ex.Message); }
         finally { _hotspotOperationInProgress = false; }
