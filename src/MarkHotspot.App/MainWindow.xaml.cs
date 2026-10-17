@@ -669,6 +669,7 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
     }
 
     private async void RefreshButton_Click(object sender, RoutedEventArgs e) => await RestartNetworkAsync();
+    private async void RestartNetworkHintButton_Click(object sender, RoutedEventArgs e) => await RestartNetworkAsync();
     private async void ScanDevicesButton_Click(object sender, RoutedEventArgs e) => await ScanDevicesAsync();
     private async void BlockDeviceButton_Click(object sender, RoutedEventArgs e)
     {
@@ -2610,21 +2611,83 @@ catch {{
         try
         {
             var profile = GetSelectedInternetConnectionProfile();
-            if (profile is null) return (false, "La Wi-Fi seleccionada como fuente de Internet no tiene un perfil activo para controlar el Mobile Hotspot.");
-            var manager = CreateTetheringManager(profile);
-            if (manager.TetheringOperationalState == TetheringOperationalState.Off)
-                return (true, "Windows confirma que el Mobile Hotspot está detenido.");
+            if (profile is not null)
+            {
+                var manager = CreateTetheringManager(profile);
+                if (manager.TetheringOperationalState != TetheringOperationalState.Off)
+                {
+                    var result = await manager.StopTetheringAsync();
+                    if (result.Status != TetheringOperationStatus.Success)
+                        return (false, "Windows no pudo detener el Mobile Hotspot: " + result.AdditionalErrorMessage);
+                    var confirmed = await WaitForHotspotStateAsync(TetheringOperationalState.Off, TimeSpan.FromSeconds(15));
+                    if (!confirmed)
+                        return (false, "Windows aceptó la orden, pero no confirmó que el Mobile Hotspot se haya detenido.");
+                }
+            }
 
-            var result = await manager.StopTetheringAsync();
-            if (result.Status != TetheringOperationStatus.Success)
-                return (false, "Windows no pudo detener el Mobile Hotspot: " + result.AdditionalErrorMessage);
-            var confirmed = await WaitForHotspotStateAsync(TetheringOperationalState.Off, TimeSpan.FromSeconds(15));
-            return confirmed
-                ? (true, "Windows confirma que el Mobile Hotspot está detenido.")
-                : (false, "Windows aceptó la orden, pero no confirmó que el Mobile Hotspot se haya detenido.");
+            // Recycle only the virtual Wi-Fi Direct/Hosted Network interface, after
+            // tethering is stopped. Do not uninstall its driver or touch physical Wi-Fi NICs.
+            var reset = await RecycleHotspotVirtualAdapterAsync();
+            return reset.Success
+                ? (true, profile is null
+                    ? "Hotspot detenido y adaptador virtual reiniciado. La fuente Wi-Fi no tiene conexión activa; vuelve a conectarla antes de iniciar."
+                    : "Hotspot detenido y adaptador virtual reiniciado para que Windows lo vuelva a crear al activarlo.")
+                : (false, "El hotspot se detuvo, pero no se pudo reiniciar su adaptador virtual: " + reset.Message);
         }
         catch (Exception ex) { return (false, "Error al detener el Mobile Hotspot: " + ex.Message); }
         finally { _hotspotOperationInProgress = false; }
+    }
+
+    private static async Task<(bool Success, string Message)> RecycleHotspotVirtualAdapterAsync()
+    {
+        const string script = @"
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+$adapters = @(Get-NetAdapter -IncludeHidden -ErrorAction Stop | Where-Object {
+    ($_.Name -match '^(Local Area Connection|Conexión de área local)') -and
+    ($_.InterfaceDescription -match '(?i)Wi-Fi Direct|Hosted Network|Virtual')
+})
+if ($adapters.Count -eq 0) {
+    [Console]::Out.WriteLine('MARKHOTSPOT_OK: No había adaptador virtual de hotspot persistente; Windows lo creará al iniciar.')
+    exit 0
+}
+foreach ($adapter in $adapters) {
+    if ($adapter.Status -ne 'Disabled') {
+        Disable-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop
+    }
+}
+Start-Sleep -Seconds 2
+foreach ($adapter in $adapters) {
+    Enable-NetAdapter -Name $adapter.Name -Confirm:$false -ErrorAction Stop
+}
+Start-Sleep -Seconds 2
+[Console]::Out.WriteLine('MARKHOTSPOT_OK: Adaptador(es) virtual(es) del hotspot reiniciado(s).')
+";
+        try
+        {
+            var encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(script));
+            var psi = new ProcessStartInfo("powershell.exe", "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded)
+            {
+                UseShellExecute = false, CreateNoWindow = true,
+                RedirectStandardOutput = true, RedirectStandardError = true,
+                StandardOutputEncoding = Encoding.UTF8, StandardErrorEncoding = Encoding.UTF8
+            };
+            using var process = Process.Start(psi) ?? throw new InvalidOperationException("No se pudo iniciar PowerShell.");
+            var stdoutTask = process.StandardOutput.ReadToEndAsync();
+            var stderrTask = process.StandardError.ReadToEndAsync();
+            if (!process.WaitForExit(30000))
+            {
+                try { process.Kill(entireProcessTree: true); } catch { }
+                throw new TimeoutException("Windows tardó demasiado en reiniciar el adaptador virtual.");
+            }
+            await Task.WhenAll(stdoutTask, stderrTask);
+            var stdout = stdoutTask.Result.Trim();
+            var stderr = stderrTask.Result.Trim();
+            if (process.ExitCode != 0 || !stdout.Contains("MARKHOTSPOT_OK", StringComparison.Ordinal))
+                return (false, !string.IsNullOrWhiteSpace(stderr) ? stderr : !string.IsNullOrWhiteSpace(stdout) ? stdout : "Windows no confirmó el reinicio del adaptador.");
+            return (true, stdout);
+        }
+        catch (Exception ex) { return (false, ex.Message); }
     }
 
     private Task<TetheringOperationalState?> GetModernHotspotStateAsync()
