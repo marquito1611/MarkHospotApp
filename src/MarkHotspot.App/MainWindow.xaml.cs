@@ -800,6 +800,8 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
                 RestartNetworkHintButton.Visibility = Visibility.Visible;
                 return;
             }
+            _lastObservedHotspotOn = true;
+            _sourceInternetLostWhileHotspotActive = false;
             RestartNetworkHintButton.Visibility = Visibility.Visible;
             await ConfirmHotspotStateAsync();
             await RefreshAdaptersAsync();
@@ -814,6 +816,9 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
         StopButton.IsEnabled = false;
         try
         {
+            // A manual stop must not be undone by automatic recovery.
+            _sourceInternetLostWhileHotspotActive = false;
+            _lastObservedHotspotOn = false;
             HotspotStateText.Text = "Hotspot Deteniendo…";
             var result = await StopHotspotAsync();
             HotspotStateText.Text = "Hotspot Detenido";
@@ -2380,6 +2385,8 @@ catch {{
         HotspotDetailText.Text = result.Message;
         if (result.Success)
         {
+            _lastObservedHotspotOn = true;
+            _sourceInternetLostWhileHotspotActive = false;
             HotspotStateText.Text = "Hotspot Activo";
             await RefreshAdaptersAsync();
         }
