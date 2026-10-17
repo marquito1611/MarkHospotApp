@@ -56,6 +56,9 @@ public partial class MainWindow : Window
     private bool _updatingCredentials;
     private bool _networkRestartInProgress;
     private bool _changingStartupToggle;
+    private bool _lastObservedHotspotOn;
+    private bool _sourceInternetLostWhileHotspotActive;
+    private bool _autoRecoveryInProgress;
     private bool _loadingHotspotMethod;
     private DateTime _lastDeviceCacheSaveUtc = DateTime.MinValue;
     private readonly bool _startMinimized;
