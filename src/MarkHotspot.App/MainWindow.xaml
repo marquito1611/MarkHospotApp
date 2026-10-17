@@ -123,8 +123,7 @@
                     <StackPanel>
                         <TextBlock Text="PUNTO DE ACCESO WI-FI" FontSize="11" Foreground="{DynamicResource MutedBrush}"/>
                         <TextBlock x:Name="HotspotStateText" Text="Activando Hotspot…" FontSize="24" FontWeight="Bold" Margin="0,8,0,4"/>
-                        <TextBlock x:Name="HotspotDetailText" Text="Preparando diagnóstico de red…" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/><Button x:Name="RestartNetworkHintButton" Content="Reinicia la red" HorizontalAlignment="Left" Margin="0,0,0,12" Visibility="Collapsed" Click="RefreshButton_Click"/>
-                        <WrapPanel><Button x:Name="StartButton" Content="Activar Mobile Hotspot" Click="StartButton_Click"/><Button x:Name="StopButton" Content="Detener hotspot" Click="StopButton_Click"/><Button x:Name="RefreshButton" Content="Reiniciar red" Click="RefreshButton_Click"/></WrapPanel>
+                        <TextBlock x:Name="HotspotDetailText" Text="Preparando diagnóstico de red…" Foreground="{DynamicResource MutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6"/><WrapPanel><Button x:Name="StartButton" Content="Activar Mobile Hotspot" Click="StartButton_Click"/><Button x:Name="StopButton" Content="Detener hotspot" Click="StopButton_Click"/><Button x:Name="RestartNetworkHintButton" Content="Restablecer red" Click="RestartNetworkHintButton_Click" Visibility="Visible"/></WrapPanel>
                     </StackPanel>
                 </Border>
                 <Grid Margin="0,0,0,16">
