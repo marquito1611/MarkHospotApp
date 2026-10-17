@@ -581,7 +581,7 @@ public partial class MainWindow : Window
     {
         if (_networkRestartInProgress) return;
         _networkRestartInProgress = true;
-        RefreshButton.IsEnabled = false;
+        RestartNetworkHintButton.IsEnabled = false;
         RestartNetworkHintButton.IsEnabled = false;
         try
         {
@@ -662,7 +662,7 @@ if ($errors.Count -gt 0) { [Console]::Out.WriteLine('MARKHOTSPOT_ERROR: ' + ($er
         }
         finally
         {
-            RefreshButton.IsEnabled = true;
+            RestartNetworkHintButton.IsEnabled = true;
             RestartNetworkHintButton.IsEnabled = true;
             _networkRestartInProgress = false;
         }
